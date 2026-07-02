@@ -1,4 +1,4 @@
-# gen-types — pure structural type CHECKERS (clean-room, MIT).
+# gen-types — pure structural type CHECKERS.
 #
 # The checking half of a pure Nix module system: a value either satisfies a type
 # (verify => null) or it does not (verify => an error string). This is contract

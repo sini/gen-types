@@ -14,8 +14,6 @@ is a self-contained **leaf** library so it can be imported *below* a registry li
   handful of utilities in [gen-prelude](https://github.com/sini/gen-prelude) — its only
   dependency. The [purity invariant](./ci/tests/types-purity.nix) is a CI-checked
   property with teeth.
-- **Clean-room, MIT.** Designed from type-theory and the gen substrate, not transcribed
-  from any LGPL source.
 - **Frugal.** A successful `verify` is a single evaluation pass; on failure it re-scans
   only to locate the first offending element. Structs allocate no intermediate attrset
   on the happy path.

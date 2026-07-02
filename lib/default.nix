@@ -1,4 +1,4 @@
-# gen-types — pure, clean-room, MIT structural type CHECKER for the gen ecosystem.
+# gen-types — pure structural type CHECKER for the gen ecosystem.
 #
 # This is the CHECKING half of a pure-Nix module system: it answers "does this value
 # inhabit this type?" and nothing else. A downstream byte-mode MERGE engine (gen-merge)
