@@ -1,4 +1,6 @@
-# gen-types
+# gen-types — clean-room structural type checker for the pure-gen ecosystem
+
+[![CI](https://github.com/sini/gen-types/actions/workflows/ci.yml/badge.svg)](https://github.com/sini/gen-types/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT) [![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-pink?logo=github)](https://github.com/sponsors/sini)
 
 A pure, `nixpkgs.lib`-free **structural type checker** for Nix — the *checking half*
 of a pure-Nix module system.
@@ -17,6 +19,26 @@ is a self-contained **leaf** library so it can be imported *below* a registry li
 - **Frugal.** A successful `verify` is a single evaluation pass; on failure it re-scans
   only to locate the first offending element. Structs allocate no intermediate attrset
   on the happy path.
+
+## Gen Ecosystem
+
+| Library | Role |
+|---------|------|
+| [gen-prelude](https://github.com/sini/gen-prelude) | Pure nixpkgs-lib-free utility base (builtins re-exports + vendored lib utils) |
+| [gen-algebra](https://github.com/sini/gen-algebra) | Pure primitives (record, search monad, either, intensional identity) |
+| [gen-types](https://github.com/sini/gen-types) | **This lib** — Clean-room MIT structural type checker (leaf/poly checkers; `verify: v → null\|err`) |
+| [gen-merge](https://github.com/sini/gen-merge) | Byte-mode module merge engine (`evalModuleTree`, byte-identical to nixpkgs `lib.evalModules` over the priority subset) |
+| [gen-schema](https://github.com/sini/gen-schema) | Typed registries (kinds, instances, collections, refs); re-hosted on gen-merge |
+| [gen-aspects](https://github.com/sini/gen-aspects) | Aspect type system (traits, classification, dispatch); re-hosted on gen-merge |
+| [gen-scope](https://github.com/sini/gen-scope) | HOAG scope-graph evaluator (demand-driven, \_eval memoization, circular attributes) |
+| [gen-graph](https://github.com/sini/gen-graph) | Accessor-based graph query combinators (traversal, condensation, phaseOrder) |
+| [gen-select](https://github.com/sini/gen-select) | Selector algebra (pattern matching over graph positions) |
+| [gen-bind](https://github.com/sini/gen-bind) | Module binding (inject external args into NixOS modules) |
+| [gen-dispatch](https://github.com/sini/gen-dispatch) | Relational rule dispatch STEP (stratified phases, conflict resolution) |
+| [gen-resolve](https://github.com/sini/gen-resolve) | Demand-driven RAG evaluator over scope graphs (attribute schedule + convergence loop) |
+| [gen-rebuild](https://github.com/sini/gen-rebuild) | Pure-Nix incremental rebuilder (change propagation, AFFECTED set) |
+| [gen-vars](https://github.com/sini/gen-vars) | Pure-Nix vars/secrets (den-agnostic) |
+| [gen-flake](https://github.com/sini/gen-flake) | The nixpkgs boundary — compose purely, inject resolved values, build NixOS systems (value-injection) |
 
 ## Install
 
