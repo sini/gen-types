@@ -8,7 +8,7 @@
 # ci/ itself legitimately uses nixpkgs lib (this scanner included); only lib/
 # is in scope. The scan is factored out so we can also prove it has TEETH by running
 # it against an injected violation and asserting it is caught.
-{ lib, ... }:
+{ genPrelude, lib, ... }:
 let
   typesDir = ../../lib;
 
@@ -49,7 +49,8 @@ let
   scan =
     sources:
     lib.concatMap (
-      src: map (tok: "${src.name}: '${tok}'") (lib.filter (tok: lib.hasInfix tok src.code) forbidden)
+      src:
+      map (tok: "${src.name}: '${tok}'") (lib.filter (tok: genPrelude.hasInfix tok src.code) forbidden)
     ) sources;
 
   realSources = map (p: {
