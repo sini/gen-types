@@ -265,9 +265,13 @@ let
       in
       checkers.typedef' name (v: addContext "in ${name}" (t.verify v));
 
-    # struct<name>{ members }: a record.
+    # struct<name>{ members }: a record. A freshly constructed struct starts from
+    # the policy set total = true, unknown = true, verify = null.
     #
-    # .override { total ? true, unknown ? true, verify ? null }:
+    # .override delta: a delta over the policy set the RECEIVER was built with.
+    # A field the delta names is replaced; a field it leaves unmentioned is
+    # retained. The result carries .override again, bound to the new set, so the
+    # handle composes at any depth rather than restarting from the set above.
     #   total   — every member key must be present (optionalAttr members exempt)
     #   unknown — false rejects keys not declared as members (closed world)
     #   verify  — extra whole-record invariant (value -> null | err)
@@ -319,7 +323,10 @@ let
             funcs = memberFuncs ++ optional (!unknown) unknownFunc ++ optional (verify != null) verify;
             verify' = v: if !isAttrs v then typeError name v else addContext ctx (firstFailing funcs v);
           in
-          checkers.typedef' name verify' // { override = build; };
+          checkers.typedef' name verify'
+          // {
+            override = delta: build ({ inherit total unknown verify; } // delta);
+          };
       in
       build { };
   });

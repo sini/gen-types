@@ -114,7 +114,7 @@ Errors thread context through nesting:
 t.struct "point" { x = t.int; y = t.int; }
 ```
 
-`.override` tunes three policies (each override starts from defaults):
+`.override` tunes three policies:
 
 ```nix
 (t.struct "point" { x = t.int; y = t.int; }).override {
@@ -122,6 +122,21 @@ t.struct "point" { x = t.int; y = t.int; }
   unknown = true;  # false => reject keys not declared as members (closed world)
   verify = null;   # extra whole-record invariant: value -> null | err
 }
+```
+
+An override is a **delta over the policy set the receiver was built with**: a field
+named in the delta is replaced, a field left unmentioned is retained. The result
+carries `.override` again, bound to the new set, so overrides chain at any depth and
+`(s.override a).override b` is `s.override (a // b)`.
+
+```nix
+# point = t.struct "point" { x = t.int; y = t.int; }
+
+((point.override { total = false; }).override { unknown = false; }).verify { x = 1; }
+# => null        (total = false survives the second override)
+
+((point.override { total = false; }).override { total = true; }).verify { x = 1; }
+# => "in struct 'point': missing member 'y'"    (same field: the later delta wins)
 ```
 
 ### Custom types
