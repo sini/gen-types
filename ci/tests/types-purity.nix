@@ -82,6 +82,19 @@ let
     code = stripComments (builtins.readFile e.path);
   }) (walk "lib/" typesDir);
 
+  # The live counterpart to `forbidden`: a token this library genuinely contains, at the exact
+  # labels where it genuinely occurs. `check` sits in four of the five sources and is absent from
+  # `lib/validate.nix`, which is the validator base (`mkValidator` / `runValidators` /
+  # `formatErrors`) — the one file here about validators rather than checkers. That single
+  # exclusion is what gives the expectation its teeth: the list is a PROPER subset of the tree,
+  # so a read collapsed to one fixed text lands outside it either way — carrying the token the
+  # list swells to all five, not carrying it the list collapses toward empty.
+  #
+  # The list is derived POST-STRIP, which is not what a plain `grep -lF check lib/*.nix` reports:
+  # that matches five of five, because `lib/validate.nix` names the token in a comment.
+  liveToken = "check";
+  liveReads = map (s: s.name) (lib.filter (s: genPrelude.hasInfix liveToken s.code) realSources);
+
   # A synthetic poisoned source — NOT written to disk, so the real scan stays green
   # while we prove the detector actually fires.
   poisoned = [
@@ -96,6 +109,26 @@ in
   flake.tests.types-purity.test-library-source-is-dependency-free = {
     expr = scan realSources;
     expected = [ ];
+  };
+
+  # And that those labels carry their files' text. The cell above reports `[ ]` just as readily
+  # for a read that returned one fixed string for every entry as for a library that is clean, and
+  # it cannot tell those apart on its own: its expectation is an absence, and a scan of constants
+  # produces nothing to find. So the reads are pinned here in the same shape the tree is pinned in
+  # — an exact list, not a count — asked of a token that is genuinely present rather than
+  # genuinely absent. Content is one axis of the subject; membership, which files are read at all,
+  # is the other and is not asserted by this cell.
+  #
+  # `lib/validate.nix` is outside this list BY CONSTRUCTION — that is what makes the list
+  # discriminate — so a mutation that replaces only that file's text is seen by no cell here.
+  flake.tests.types-purity.test-scan-reads-are-live = {
+    expr = liveReads;
+    expected = [
+      "lib/checkers.nix"
+      "lib/default.nix"
+      "lib/refined.nix"
+      "lib/strict.nix"
+    ];
   };
 
   # The scanner has teeth: an injected `lib.types` violation is caught.
