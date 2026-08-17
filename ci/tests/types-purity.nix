@@ -104,10 +104,36 @@ let
   };
 in
 {
-  # The real component source is clean.
+  # The real component source is clean. That `[ ]` is not evidence on its own — a scan that read the
+  # wrong tree, or no tree, or every file as one fixed string produces it just as readily. The two
+  # cells below are what make it mean something: the manifest pins WHICH files this list holds, and
+  # the live-content cell pins that those labels carry their files' text.
   flake.tests.types-purity.test-library-source-is-dependency-free = {
     expr = scan realSources;
     expected = [ ];
+  };
+
+  # Which files the scan reads, written down as the literal list. Disconnection is an identity
+  # defect and non-emptiness is a cardinality predicate, so the two do not meet: a scan that had
+  # dropped the whole library tree and kept some other file would still be non-empty, would still
+  # have non-empty content, and would still report the invariant clean over a set containing none
+  # of the library. Only a statement about which files are read can see that.
+  #
+  # Writing the membership down also means a new library file arrives as a RED rather than being
+  # absorbed silently. That is the point rather than the price — the scope of an invariant is a
+  # declared surface, not a default.
+  #
+  # This cell is silent on content: a read handing every entry one fixed string satisfies it
+  # exactly. The live-content cell below is the half that sees that.
+  flake.tests.types-purity.test-scan-subject-is-the-library-tree = {
+    expr = map (s: s.name) realSources;
+    expected = [
+      "lib/checkers.nix"
+      "lib/default.nix"
+      "lib/refined.nix"
+      "lib/strict.nix"
+      "lib/validate.nix"
+    ];
   };
 
   # And that those labels carry their files' text. The cell above reports `[ ]` just as readily
@@ -115,12 +141,13 @@ in
   # it cannot tell those apart on its own: its expectation is an absence, and a scan of constants
   # produces nothing to find. So the reads are pinned here in the same shape the tree is pinned in
   # — an exact list, not a count — asked of a token that is genuinely present rather than
-  # genuinely absent. Content is one axis of the subject; membership, which files are read at all,
-  # is the other and is not asserted by this cell.
+  # genuinely absent. Content is one axis of the subject; membership — which files are read at all
+  # — is the other, and the manifest above states it. The two together are what pin the subject,
+  # and neither does it alone.
   #
-  # This is the cell the library cell and the welded detector cell below both lean on: each of
-  # them claims an absence over text read from disk, and neither can see a read collapsed to a
-  # constant on its own.
+  # That pair is what the library cell and the welded detector cell below both lean on: each of
+  # them claims an absence over text read from disk, and no such claim is evidence while the
+  # subject it is made over could be empty or constant.
   #
   # `lib/validate.nix` is outside this list BY CONSTRUCTION — that is what makes the list
   # discriminate — so a mutation that replaces only that file's text is seen by no cell here.
@@ -140,10 +167,11 @@ in
   # the library contributes nothing and the planted tether contributes precisely this.
   #
   # That first half is an absence claim about text read from disk, so this cell's green is
-  # evidence only while something else holds the subject. The live-content cell above is what
-  # holds it: under a read collapsed to a constant this expression reduces to `scan [ poisoned ]`,
-  # which is the expectation exactly, and this cell would pass a fortiori. Which files are read at
-  # all is the other axis of the same subject, and no cell in this file asserts it.
+  # evidence only while something else holds the subject. The manifest and the live-content cell
+  # above are what hold it, on their two axes: under a read collapsed to a constant this
+  # expression reduces to `scan [ poisoned ]`, which is the expectation exactly, and this cell
+  # would pass a fortiori — the live-content cell is what sees that, and the manifest is what sees
+  # a subject swapped for some other tree.
   #
   # The expectation is the violation LIST rather than merely that one was produced. A detector
   # firing on the wrong token, or whose `file: 'tok'` message has decayed into something a reader
