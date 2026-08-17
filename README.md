@@ -200,7 +200,7 @@ the engine above it.
 $ cd ci && nix flake check          # or: nix-unit --flake .#tests
 ```
 
-113 nix-unit assertions across primitives, polymorphic combinators, structs, refined,
+114 nix-unit assertions across primitives, polymorphic combinators, structs, refined,
 validators, strict, identity, the `check` contract, and the purity invariant — every
 checker with success (`null`) and failure (exact error string) cases, plus nested and
 recursive types. The purity test walks `lib/` and fails CI on any `nixpkgs.lib`/

@@ -77,10 +77,16 @@ let
       map (tok: "${src.name}: '${tok}'") (lib.filter (tok: genPrelude.hasInfix tok src.code) forbidden)
     ) sources;
 
-  realSources = map (e: {
-    inherit (e) name;
-    code = stripComments (builtins.readFile e.path);
-  }) (walk "lib/" typesDir);
+  # read : [ { name; path; } ] -> [ { name; code; } ]. Factored out so the fixture cell below can
+  # run the same pipeline the library scan runs, rather than a second copy of it.
+  read =
+    entries:
+    map (e: {
+      inherit (e) name;
+      code = stripComments (builtins.readFile e.path);
+    }) entries;
+
+  realSources = read (walk "lib/" typesDir);
 
   # The live counterpart to `forbidden`: a token this library genuinely contains, at the exact
   # labels where it genuinely occurs. `check` sits in four of the five sources and is absent from
@@ -183,6 +189,30 @@ in
     expected = [
       "<injected>: 'lib.'"
       "<injected>: 'lib.types'"
+    ];
+  };
+
+  # The walk descends, and carries its prefix while doing so. lib/ is flat, so the recursive branch
+  # never runs against the real tree and a walk that quietly stopped descending would keep every
+  # other cell here green. The fixture tree is nested on purpose and carries a planted tether at
+  # each of its two depths. Handing it its own real position in the repository as the prefix pins
+  # both halves of the naming rule at once: the prefix the walk is GIVEN is threaded through, and
+  # the prefix it BUILDS for a subdirectory extends that one rather than replacing it.
+  #
+  # The fixtures live under `_fixtures/` because the test-tree importer ignores paths with a
+  # component beginning with an underscore, so they are never imported as tests. Their tethers are
+  # planted deliberately and sit outside the purity scan's subject, which is lib/ alone — they
+  # cannot trip the library cell.
+  #
+  # Unlike the absence cells here, this one arms itself and composes with nothing: its expectation
+  # is a non-empty list over its own subject, so a read that was severed or emptied makes the
+  # actual `[ ]` and reds it.
+  flake.tests.types-purity.test-walk-descends-into-subdirectories = {
+    expr = scan (read (walk "ci/tests/_fixtures/purity-walk/" ./_fixtures/purity-walk));
+    expected = [
+      "ci/tests/_fixtures/purity-walk/nested/tethered.nix: 'lib.'"
+      "ci/tests/_fixtures/purity-walk/nested/tethered.nix: 'lib.types'"
+      "ci/tests/_fixtures/purity-walk/surface.nix: 'mkOption'"
     ];
   };
 
