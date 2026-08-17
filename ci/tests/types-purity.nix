@@ -71,22 +71,77 @@ let
 
   # scan : [ { name; code; } ] -> [ "file: 'tok'" ]
   scan =
-    sources:
+    srcs:
     lib.concatMap (
       src:
       map (tok: "${src.name}: '${tok}'") (lib.filter (tok: genPrelude.hasInfix tok src.code) forbidden)
-    ) sources;
+    ) srcs;
 
-  # read : [ { name; path; } ] -> [ { name; code; } ]. Factored out so the fixture cell below can
-  # run the same pipeline the library scan runs, rather than a second copy of it.
-  read =
+  # The read is in two stages because the strip's premise has to be asserted over text that has
+  # NOT been stripped, and `sources` is a total per-element function of `rawSources` — the name
+  # passes through untouched and the code is the strip of the text — so pinning `sources` pins
+  # `rawSources` up to exactly what the strip can hide, which is what the premise cells are about.
+  # One `readFile` per file feeds both.
+  raw =
     entries:
     map (e: {
       inherit (e) name;
-      code = stripComments (builtins.readFile e.path);
+      text = builtins.readFile e.path;
     }) entries;
 
-  realSources = read (walk "lib/" typesDir);
+  strip = map (s: {
+    inherit (s) name;
+    code = stripComments s.text;
+  });
+
+  # read : [ { name; path; } ] -> [ { name; code; } ]. The two stages composed, so the fixture cell
+  # below runs the same pipeline the library scan runs rather than a second copy of it.
+  read = entries: strip (raw entries);
+
+  rawSources = raw (walk "lib/" typesDir);
+  sources = strip rawSources;
+
+  # `stripComments` cuts each line at its first `#`, which is sound only while no `#` occurs inside
+  # a string literal in the scanned source. Where one does, the strip truncates live code from that
+  # point to the end of that line and the scanner goes blind over the tail with no signal at all —
+  # a green suite over unscanned code. The blinding is per line, since the strip maps over lines
+  # independently: bounded, and still unsignalled.
+  #
+  # The predicate is line-local and deliberately conservative in the fail-safe direction. A
+  # miscount over-reports and reds loudly rather than under-reporting silently.
+  countQuotes = s: (lib.length (lib.splitString "\"" s)) - 1;
+  firstHashInString =
+    line:
+    let
+      parts = lib.splitString "#" line;
+    in
+    lib.length parts > 1 && lib.mod (countQuotes (lib.head parts)) 2 == 1;
+
+  # premiseHits : [ { name; text; } ] -> [ "<file>: <line>" ]
+  premiseHits =
+    srcs:
+    lib.concatMap (
+      s:
+      let
+        lines = lib.splitString "\n" s.text;
+      in
+      lib.concatMap (
+        i: lib.optional (firstHashInString (lib.elemAt lines i)) "${s.name}: ${toString (i + 1)}"
+      ) (lib.range 0 (lib.length lines - 1))
+    ) srcs;
+
+  # The live control's subject: two lines written here rather than read from anywhere, one with a
+  # `#` inside a string and one with an ordinary trailing comment.
+  premiseControl = [
+    {
+      name = "<in-string-hash>";
+      text = "    url = \"https://example.com/x#frag\";";
+    }
+    {
+      name = "<ordinary-comment>";
+      text = "    x = 1; # an ordinary comment";
+    }
+  ];
 
   # The live counterpart to `forbidden`: a token this library genuinely contains, at the exact
   # labels where it genuinely occurs. `check` sits in four of the five sources and is absent from
@@ -99,7 +154,7 @@ let
   # The list is derived POST-STRIP, which is not what a plain `grep -lF check lib/*.nix` reports:
   # that matches five of five, because `lib/validate.nix` names the token in a comment.
   liveToken = "check";
-  liveReads = map (s: s.name) (lib.filter (s: genPrelude.hasInfix liveToken s.code) realSources);
+  liveReads = map (s: s.name) (lib.filter (s: genPrelude.hasInfix liveToken s.code) sources);
 
   # A synthetic poisoned source — NOT written to disk, so the real scan stays green while we
   # prove the detector actually fires. Its label is bracketed so it cannot be read as one of the
@@ -115,7 +170,7 @@ in
   # cells below are what make it mean something: the manifest pins WHICH files this list holds, and
   # the live-content cell pins that those labels carry their files' text.
   flake.tests.types-purity.test-library-source-is-dependency-free = {
-    expr = scan realSources;
+    expr = scan sources;
     expected = [ ];
   };
 
@@ -132,7 +187,7 @@ in
   # This cell is silent on content: a read handing every entry one fixed string satisfies it
   # exactly. The live-content cell below is the half that sees that.
   flake.tests.types-purity.test-scan-subject-is-the-library-tree = {
-    expr = map (s: s.name) realSources;
+    expr = map (s: s.name) sources;
     expected = [
       "lib/checkers.nix"
       "lib/default.nix"
@@ -182,7 +237,7 @@ in
   # `lib.all` over an empty list is vacuously true, so without it the floor would report clean on
   # exactly the degeneracy it exists to bound.
   flake.tests.types-purity.test-scan-reads-non-empty-sources = {
-    expr = realSources != [ ] && lib.all (s: s.code != "") realSources;
+    expr = sources != [ ] && lib.all (s: s.code != "") sources;
     expected = true;
   };
 
@@ -204,7 +259,7 @@ in
   # The list form couples this cell to `forbidden` deliberately — adding a token the payload above
   # matches reds it — so that the teeth are looked at whenever the teeth change.
   flake.tests.types-purity.test-detector-catches-injected-violation = {
-    expr = scan (realSources ++ [ poisoned ]);
+    expr = scan (sources ++ [ poisoned ]);
     expected = [
       "<injected>: 'lib.'"
       "<injected>: 'lib.types'"
@@ -233,6 +288,38 @@ in
       "ci/tests/_fixtures/purity-walk/nested/tethered.nix: 'lib.types'"
       "ci/tests/_fixtures/purity-walk/surface.nix: 'mkOption'"
     ];
+  };
+
+  # The strip's premise, asserted where it is relied on. Every line whose first `#` follows an odd
+  # number of quotes is a line where the strip would cut live code; the expectation is that the
+  # scanned tree contains none.
+  #
+  # This is an absence claim over text read from disk, so it does NOT red on a severed read: any
+  # subject with no in-string `#` satisfies it, including no subject at all and a subject of
+  # constant text. It is non-vacuous only in composition with the two cells that pin the subject —
+  # the membership manifest and the live-content cell — asserted over the same read.
+  flake.tests.types-purity.test-strip-premise-holds = {
+    expr = premiseHits rawSources;
+    expected = [ ];
+  };
+
+  # That the predicate above can fire at all. Its subject is a pair of literals written inside this
+  # cell, so it proves the predicate discriminates an in-string `#` from an ordinary comment and
+  # says nothing whatever about what the predicate was pointed at. It is not the arming for the
+  # cell above; the subject-pinning pair is. The expectation is the list, not non-emptiness.
+  flake.tests.types-purity.test-strip-premise-scan-is-live = {
+    expr = premiseHits premiseControl;
+    expected = [ "<in-string-hash>: 1" ];
+  };
+
+  # Where the line-local predicate is not conclusive, declared as a list. A `#` inside a `''…''`
+  # block is invisible to it — the predicate reads one line at a time and cannot know it is inside
+  # a multi-line string — so the files carrying `''` are written down and a new one arrives as a
+  # red that has to be read rather than as silence. This repo is the one of the three where that
+  # list is non-empty, which makes the cell its own positive control.
+  flake.tests.types-purity.test-strip-premise-multiline-strings = {
+    expr = map (s: s.name) (lib.filter (s: genPrelude.hasInfix "''" s.text) rawSources);
+    expected = [ "lib/checkers.nix" ];
   };
 
   # And it does not "catch" a token that only appears inside a comment.
