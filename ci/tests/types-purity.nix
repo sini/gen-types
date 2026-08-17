@@ -167,6 +167,25 @@ in
     ];
   };
 
+  # The residual content floor. The live list above is a PROPER subset of the manifest, which is
+  # what lets it discriminate a constant-returning read in both directions — and the file it leaves
+  # out is `lib/validate.nix`, whose text no other cell here pins. A mutation replacing only that
+  # file's text is seen by nothing else: the manifest stays green because the name is intact, the
+  # live list stays green because that label was never in it, and the library cell stays green
+  # because the replacement carries no forbidden token.
+  #
+  # This cell closes the empty case for that residue and no more. It is not a claim that the suite
+  # is non-vacuous — the manifest and the live list are what carry that — and a non-empty constant
+  # substituted for the residue file's text still passes here.
+  #
+  # The `!= [ ]` conjunct guards this cell's OWN vacuity and is not redundant with the manifest:
+  # `lib.all` over an empty list is vacuously true, so without it the floor would report clean on
+  # exactly the degeneracy it exists to bound.
+  flake.tests.types-purity.test-scan-reads-non-empty-sources = {
+    expr = realSources != [ ] && lib.all (s: s.code != "") realSources;
+    expected = true;
+  };
+
   # The detector has teeth, and it grows them on the real subject: the scan runs over exactly the
   # source list the library cell scans, with one synthetic entry appended. So the firing is proven
   # by the same call that reports the tree clean, and the expectation states both halves at once —
