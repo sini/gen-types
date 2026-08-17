@@ -95,14 +95,13 @@ let
   liveToken = "check";
   liveReads = map (s: s.name) (lib.filter (s: genPrelude.hasInfix liveToken s.code) realSources);
 
-  # A synthetic poisoned source — NOT written to disk, so the real scan stays green
-  # while we prove the detector actually fires.
-  poisoned = [
-    {
-      name = "injected";
-      code = stripComments "  foo = lib.types.str; # comment mentioning nixpkgs is stripped";
-    }
-  ];
+  # A synthetic poisoned source — NOT written to disk, so the real scan stays green while we
+  # prove the detector actually fires. Its label is bracketed so it cannot be read as one of the
+  # repo-root-relative paths it now sits beside.
+  poisoned = {
+    name = "<injected>";
+    code = stripComments "  foo = lib.types.str; # comment mentioning nixpkgs is stripped";
+  };
 in
 {
   # The real component source is clean.
@@ -119,6 +118,10 @@ in
   # genuinely absent. Content is one axis of the subject; membership, which files are read at all,
   # is the other and is not asserted by this cell.
   #
+  # This is the cell the library cell and the welded detector cell below both lean on: each of
+  # them claims an absence over text read from disk, and neither can see a read collapsed to a
+  # constant on its own.
+  #
   # `lib/validate.nix` is outside this list BY CONSTRUCTION — that is what makes the list
   # discriminate — so a mutation that replaces only that file's text is seen by no cell here.
   flake.tests.types-purity.test-scan-reads-are-live = {
@@ -131,10 +134,28 @@ in
     ];
   };
 
-  # The scanner has teeth: an injected `lib.types` violation is caught.
+  # The detector has teeth, and it grows them on the real subject: the scan runs over exactly the
+  # source list the library cell scans, with one synthetic entry appended. So the firing is proven
+  # by the same call that reports the tree clean, and the expectation states both halves at once —
+  # the library contributes nothing and the planted tether contributes precisely this.
+  #
+  # That first half is an absence claim about text read from disk, so this cell's green is
+  # evidence only while something else holds the subject. The live-content cell above is what
+  # holds it: under a read collapsed to a constant this expression reduces to `scan [ poisoned ]`,
+  # which is the expectation exactly, and this cell would pass a fortiori. Which files are read at
+  # all is the other axis of the same subject, and no cell in this file asserts it.
+  #
+  # The expectation is the violation LIST rather than merely that one was produced. A detector
+  # firing on the wrong token, or whose `file: 'tok'` message has decayed into something a reader
+  # cannot act on off a red CI, is broken in the way that matters, and non-emptiness passes both.
+  # The list form couples this cell to `forbidden` deliberately — adding a token the payload above
+  # matches reds it — so that the teeth are looked at whenever the teeth change.
   flake.tests.types-purity.test-detector-catches-injected-violation = {
-    expr = scan poisoned != [ ];
-    expected = true;
+    expr = scan (realSources ++ [ poisoned ]);
+    expected = [
+      "<injected>: 'lib.'"
+      "<injected>: 'lib.types'"
+    ];
   };
 
   # And it does not "catch" a token that only appears inside a comment.
