@@ -22,7 +22,17 @@
 #
 # The reach of the scan — every `.nix` file under lib/, at any depth — is a separate property
 # and rests on a separate mechanism: it follows from the walk descending, not from how the
-# walk names what it finds. lib/ is flat today, so nothing here exercises that descent.
+# walk names what it finds. lib/ is flat, so the library cell does not exercise that descent;
+# a committed nested fixture under ci/tests/_fixtures/ is what does.
+#
+# AN EMPTINESS IS NOT EVIDENCE. Four mechanisms stand between this library and a silent nixpkgs
+# tether — the walk that finds the files, the read that fetches their text, the strip that
+# removes their comments, and the token scan that judges what is left — and every one of them
+# reports "clean" when it is dead. So each is held to a cell whose expectation is a literal: the
+# subject is pinned on both of its axes, membership and content; the detector is exercised over
+# that same subject with a known-bad entry appended; the walk's recursion runs against the
+# fixture tree; and the strip's premise is asserted over the raw text with its blind spot
+# declared. The absence cells here are evidence only in that composition, and each says so.
 { genPrelude, lib, ... }:
 let
   typesDir = ../../lib;
@@ -94,10 +104,6 @@ let
     code = stripComments s.text;
   });
 
-  # read : [ { name; path; } ] -> [ { name; code; } ]. The two stages composed, so the fixture cell
-  # below runs the same pipeline the library scan runs rather than a second copy of it.
-  read = entries: strip (raw entries);
-
   rawSources = raw (walk "lib/" typesDir);
   sources = strip rawSources;
 
@@ -107,8 +113,14 @@ let
   # a green suite over unscanned code. The blinding is per line, since the strip maps over lines
   # independently: bounded, and still unsignalled.
   #
-  # The predicate is line-local and deliberately conservative in the fail-safe direction. A
-  # miscount over-reports and reds loudly rather than under-reporting silently.
+  # The predicate is line-local: it asks whether the text before a line's first `#` has closed
+  # every double quote it opened, an odd count meaning that `#` stands inside one. Being
+  # line-local it cannot conclude about string content spanning lines — an indented `''…''`
+  # block — so those files are declared as a list of their own rather than trusted in silence.
+  #
+  # `countQuotes` does not model an escaped `\"` inside a string, and the direction of that
+  # error is the fail-safe one: an escaped quote inflates the count and can only manufacture a
+  # phantom breach, which reds loudly and gets read. It cannot hide a real one.
   countQuotes = s: (lib.length (lib.splitString "\"" s)) - 1;
   firstHashInString =
     line:
@@ -117,31 +129,18 @@ let
     in
     lib.length parts > 1 && lib.mod (countQuotes (lib.head parts)) 2 == 1;
 
-  # premiseHits : [ { name; text; } ] -> [ "<file>: <line>" ]
-  premiseHits =
+  # premiseBreaches : [ { name; text; } ] -> [ "file:line" ]. A breach is reported at its line as
+  # well as its file, because what it says is that one particular line's code was truncated.
+  premiseBreaches =
     srcs:
     lib.concatMap (
-      s:
-      let
-        lines = lib.splitString "\n" s.text;
-      in
-      lib.concatMap (
-        i: lib.optional (firstHashInString (lib.elemAt lines i)) "${s.name}: ${toString (i + 1)}"
-      ) (lib.range 0 (lib.length lines - 1))
+      src:
+      lib.concatLists (
+        lib.imap1 (i: line: lib.optional (firstHashInString line) "${src.name}:${toString i}") (
+          lib.splitString "\n" src.text
+        )
+      )
     ) srcs;
-
-  # The live control's subject: two lines written here rather than read from anywhere, one with a
-  # `#` inside a string and one with an ordinary trailing comment.
-  premiseControl = [
-    {
-      name = "<in-string-hash>";
-      text = "    url = \"https://example.com/x#frag\";";
-    }
-    {
-      name = "<ordinary-comment>";
-      text = "    x = 1; # an ordinary comment";
-    }
-  ];
 
   # The live counterpart to `forbidden`: a token this library genuinely contains, at the exact
   # labels where it genuinely occurs. `check` sits in four of the five sources and is absent from
@@ -280,9 +279,10 @@ in
   #
   # Unlike the absence cells here, this one arms itself and composes with nothing: its expectation
   # is a non-empty list over its own subject, so a read that was severed or emptied makes the
-  # actual `[ ]` and reds it.
+  # actual `[ ]` and reds it. It runs the same two read stages the library scan runs — raw text,
+  # then the strip — rather than a second copy of them.
   flake.tests.types-purity.test-walk-descends-into-subdirectories = {
-    expr = scan (read (walk "ci/tests/_fixtures/purity-walk/" ./_fixtures/purity-walk));
+    expr = scan (strip (raw (walk "ci/tests/_fixtures/purity-walk/" ./_fixtures/purity-walk)));
     expected = [
       "ci/tests/_fixtures/purity-walk/nested/tethered.nix: 'lib.'"
       "ci/tests/_fixtures/purity-walk/nested/tethered.nix: 'lib.types'"
@@ -294,22 +294,34 @@ in
   # number of quotes is a line where the strip would cut live code; the expectation is that the
   # scanned tree contains none.
   #
-  # This is an absence claim over text read from disk, so it does NOT red on a severed read: any
-  # subject with no in-string `#` satisfies it, including no subject at all and a subject of
-  # constant text. It is non-vacuous only in composition with the two cells that pin the subject —
-  # the membership manifest and the live-content cell — asserted over the same read.
+  # This is an absence claim over text read from disk, and it is NOT non-vacuous on its own: its
+  # expectation is `[ ]`, which an emptied or constant subject satisfies exactly as a sound corpus
+  # does. What arms it is the pair asserted over the same read — the membership manifest for which
+  # files, the live-content cell for their text — together with the content floor for the one
+  # label that pair cannot reach. Green here means the premise holds of the text those cells pin,
+  # and nothing more.
   flake.tests.types-purity.test-strip-premise-holds = {
-    expr = premiseHits rawSources;
+    expr = premiseBreaches rawSources;
     expected = [ ];
   };
 
-  # That the predicate above can fire at all. Its subject is a pair of literals written inside this
-  # cell, so it proves the predicate discriminates an in-string `#` from an ordinary comment and
-  # says nothing whatever about what the predicate was pointed at. It is not the arming for the
-  # cell above; the subject-pinning pair is. The expectation is the list, not non-emptiness.
+  # And the predicate that says so is capable of saying no. Its subject is a literal written inside
+  # this cell rather than anything on disk, so what it establishes is exactly that the test
+  # discriminates an in-string `#` from an ordinary trailing comment — it says nothing whatever
+  # about what the cell above was pointed at, which is why that cell names its pair instead of
+  # leaning on this one. Both directions ride in one expectation: the first line must be caught and
+  # the second must not, so a predicate stuck at either constant reds here.
   flake.tests.types-purity.test-strip-premise-scan-is-live = {
-    expr = premiseHits premiseControl;
-    expected = [ "<in-string-hash>: 1" ];
+    expr = premiseBreaches [
+      {
+        name = "<in-string-hash>";
+        text = ''
+          url = "https://example.com/x#frag";
+          x = 1; # an ordinary trailing comment
+        '';
+      }
+    ];
+    expected = [ "<in-string-hash>:1" ];
   };
 
   # Where the line-local predicate is not conclusive, declared as a list. A `#` inside a `''…''`
