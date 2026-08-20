@@ -175,11 +175,47 @@ t.formatErrors failures;
 t.defaultOnError left;                       # throws a formatted error
 ```
 
-### Intensional identity
+### Conservative equality over checker identity
 
-Two checkers denote the same type iff their names agree (Palmer-style, name-only —
-no closure/structural comparison). `__id` is the sha256 content address of the name,
-the same discipline as gen-schema's `id_hash`.
+Two checkers denote the same type when `typeEq` (equivalently `intensionalEq`) holds of
+them. The relation is Palmer's **conservative equality** (§2.3, §5.3 — his own term;
+"intensional" qualifies the *function*, never the equality), and it dispatches on the
+checker's identity REGIME rather than reading a single field:
+
+| regime | the checker carries | the relation |
+|--------|---------------------|--------------|
+| minted | `__mint.minted` | digest equality |
+| unmintable | `__mint`, no `minted` | Nix `==` on the checker record **minus `__id`** |
+| unmigrated | no `__mint` | `name` equality |
+
+No producer stamps a checker yet, so **every shipped checker is unmigrated** and the
+relation is byte-for-byte the one it replaces — `__id` was a pure function of `name`.
+The dispatch is what makes the reader total ahead of that producer: `__mint` is a tagged
+sum, and a reader that branched on field presence and then read `.minted` raw would abort
+uncatchably on a checker that has no mintable identity.
+
+The unmintable arm compares the record and never a component list: `check` is a bare
+lambda and an attribute selection is an indirection, so a component-wise form is false
+even against itself and the relation would be *empty* rather than finer. Finer is the
+safe direction here — the failure a type discipline exists to exclude is admitting
+semantically distinct values under one type, i.e. answering **true** wrongly.
+
+It compares the record **minus `__id`**, and minus nothing else. `__id` is an accessor,
+not distinguishing content, and in this regime that accessor *is* the named refusal — so
+comparing the record whole would force the refusal inside the very decision it exists to
+permit, and the decision would detonate. Excluding the field rather than making it absent
+is what keeps the refusal reachable for a consumer that genuinely demands an identity.
+
+**That one exclusion is sufficient, not arbitrary.** `__mint.minted` is the only other
+refusal-valued accessor, and it is shielded by the tagged sum's own shape: the minted and
+sealed arms live under *different key names*, and Nix `==` decides on the name set before
+forcing any value. The one path that does force a mint is a minted-against-minted
+comparison, which never reaches this arm — it compares digests, a genuine demand for an
+identity, where a catchable named refusal is the right outcome.
+
+`__id` remains the sha256 content address of the name — the same discipline as
+gen-schema's `id_hash` — and is the accessor for a consumer that DEMANDS an identity. A
+consumer that merely decides dispatches instead of demanding.
 
 ```nix
 t.typeEq (t.listOf t.int) (t.listOf t.int)   # => true
