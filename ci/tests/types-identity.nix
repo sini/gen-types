@@ -63,9 +63,21 @@ in
     expr = (t.listOf t.int).name;
     expected = "listOf<int>";
   };
-  flake.tests.types-identity.test-id-is-sha256-hex = {
-    expr = builtins.stringLength t.int.__id;
-    expected = 64;
+  # ★ THE FORMAT MOVED WITH THE AUTHORITY, and the cell asserts the SHAPE rather than a length now.
+  # `mkId` emitted a bare 64-character digest over `"gen-types|<name>"` — a SECOND hashing surface
+  # against a ruling that names one. It retired into `hashIdentity`, so a checker's identity is
+  # kind-tagged like every other minted identity in the ecosystem: `"type:" ++ 64 hex`, 69
+  # characters. Asserting the tagged shape says what the format IS; asserting 69 would only say how
+  # long it is, and would pass for any other five-character prefix.
+  flake.tests.types-identity.test-id-is-kind-tagged-sha256 = {
+    expr = {
+      shape = builtins.match "type:[0-9a-f]{64}" t.int.__id != null;
+      length = builtins.stringLength t.int.__id;
+    };
+    expected = {
+      shape = true;
+      length = 69;
+    };
   };
   flake.tests.types-identity.test-typeEq-same-structural-name = {
     # two independently-constructed listOf<int> are intensionally equal

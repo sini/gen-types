@@ -2,6 +2,7 @@
   inputs = {
     gen-harness.url = "github:sini/gen-harness";
     gen-prelude.url = "github:sini/gen-prelude";
+    gen-identity.url = "github:sini/gen-identity";
     nixpkgs.url = "https://channels.nixos.org/nixos-unstable/nixexprs.tar.xz";
   };
 
@@ -9,7 +10,10 @@
     inputs@{ gen-harness, ... }:
     let
       prelude = inputs.gen-prelude.lib;
-      genTypes = import ../lib { inherit prelude; };
+      genTypes = import ../lib {
+        inherit prelude;
+        identity = inputs.gen-identity.lib;
+      };
     in
     gen-harness.lib.mkCi {
       inherit inputs;

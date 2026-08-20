@@ -17,7 +17,7 @@
 #
 # NO nixpkgs.lib here (purity invariant, see ci/tests/types-purity.nix): builtins
 # plus the handful of gen-prelude utilities the substrate already vendors.
-{ prelude }:
+{ prelude, identity }:
 let
   inherit (prelude)
     all
@@ -34,7 +34,6 @@ let
     optional
     ;
   inherit (builtins)
-    hashString
     isFloat
     isInt
     isPath
@@ -127,8 +126,23 @@ let
 
   # ── identity ──
   baseName = name: head (split "<" name);
-  # Lazy: hashString is only forced when a consumer actually reads __id.
-  mkId = name: hashString "sha256" "gen-types|${name}";
+
+  # ★ THE MINT IS THE SUBSTRATE'S, NOT THIS LIBRARY'S. `mkId` was a SECOND hashing surface —
+  # `hashString "sha256" "gen-types|<name>"` — against a ruling that names ONE minting authority
+  # (ADR-0016 ruling 5), and it retires here into `hashIdentity`. A checker's identity is now
+  # kind-tagged like every other minted identity in the ecosystem: `"type:<digest>"`.
+  #
+  # ★ THE MINT ARRIVES INJECTED because gen-types is a LEAF and the authority used to live
+  # downstream of it, in gen-schema — a cycle gen-types could never have closed. That is the whole
+  # reason the authority became a dependency-free library of its own, and taking it as a parameter
+  # is what a consumer upstream of the old home has to do.
+  #
+  # ★ WHAT ENTERS THE PREIMAGE IS THE NAME, AND ONLY THE NAME. A checker's `check` is a bare
+  # lambda, and no preimage over a lambda can be TOTAL — so a mint over the whole checker record
+  # would merge behaviourally distinct checkers, which for a relation that MINTS is the unsafe
+  # direction with no safe alternative. The name is what `mkId` hashed too; what changed is the
+  # authority and the tag, not the distinguishing content.
+  mintType = name: identity.hashIdentity "type" [ "name" ] (_: name);
 
   self = fix (checkers: {
     # ── custom-type constructors ──
@@ -143,7 +157,19 @@ let
         in
         if e == null then v2 else throw e;
       __name = baseName name;
-      __id = mkId name;
+
+      # ★ `__mint` IS A TAGGED SUM AND IT IS TOTAL — every checker carries it, and a reader
+      # dispatches on the TAG rather than branching on the field's presence. A checker minted over
+      # its name is `minted`; nothing here is sealed, because a name is always mint-admissible.
+      # The relation in `lib/default.nix` reads this and never `__id`.
+      __mint.minted = mintType name;
+
+      # `__id` survives as the ACCESSOR a consumer reads when it DEMANDS an identity — it returns
+      # the minted value, and on a value with no mintable identity it would throw by name. It is
+      # LAZY, so a consumer that never demands one never hashes; and it is deliberately NOT what
+      # the equality relation reads, because demanding an identity of a sealed value is a refusal
+      # while DECIDING about one is not.
+      __id = mintType name;
     };
 
     # Declare a type from a bool predicate; the standard type-mismatch message is

@@ -8,11 +8,18 @@
   # The test runner lives in ./ci, a separate flake.
   inputs = {
     gen-prelude.url = "github:sini/gen-prelude";
+    # The substrate's one minting authority (ADR-0016 ruling 5), a dependency-free leaf. gen-types
+    # is a LEAF too and could never have reached the mint while it lived in gen-schema — that
+    # cycle is the whole reason the authority became a library of its own.
+    gen-identity.url = "github:sini/gen-identity";
   };
 
   outputs =
-    { gen-prelude, ... }:
+    { gen-prelude, gen-identity, ... }:
     {
-      lib = import ./lib { prelude = gen-prelude.lib; };
+      lib = import ./lib {
+        prelude = gen-prelude.lib;
+        identity = gen-identity.lib;
+      };
     };
 }

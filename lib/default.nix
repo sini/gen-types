@@ -14,9 +14,9 @@
 #
 # Function of a NAMED dep (gen convention §8): the only dependency is gen-prelude's
 # pure utility surface. No nixpkgs.lib anywhere under lib/ (purity invariant).
-{ prelude }:
+{ prelude, identity }:
 let
-  checkers = import ./checkers.nix { inherit prelude; };
+  checkers = import ./checkers.nix { inherit prelude identity; };
   refinedLib = import ./refined.nix { inherit prelude; };
   validateLib = import ./validate.nix { inherit prelude; };
   strictLib = import ./strict.nix { inherit prelude; };
