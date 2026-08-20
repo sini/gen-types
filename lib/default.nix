@@ -131,6 +131,13 @@ checkers
   # dispatches on the identity REGIME rather than reading a single field, so it is total
   # over minted, sealed and not-yet-stamped checkers alike; see its definition above for
   # why the sealed arm compares the whole record and why finer is the safe direction.
+  #
+  # ★ THE EXPORTED NAME MOVES WITH THE RELATION. `conservativeEq` is Palmer's own term (§2.3,
+  # §5.3, §8): "intensional" qualifies the FUNCTION and never the equality, and the name it
+  # replaces read as a licence to compare intension alone — which is exactly the half of
+  # Fig. 5's conjunction the relation used to ship. `typeEq` stays as the domain-facing
+  # spelling, since gen-merge consumes this to decide whether two option declarations carry
+  # the same type and names it the way a type discipline would.
   typeEq = conservativeEq;
-  intensionalEq = conservativeEq;
+  inherit conservativeEq;
 }

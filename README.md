@@ -177,7 +177,7 @@ t.defaultOnError left;                       # throws a formatted error
 
 ### Conservative equality over checker identity
 
-Two checkers denote the same type when `typeEq` (equivalently `intensionalEq`) holds of
+Two checkers denote the same type when `typeEq` (equivalently `conservativeEq`) holds of
 them. The relation is Palmer's **conservative equality** (§2.3, §5.3 — his own term;
 "intensional" qualifies the *function*, never the equality), and it dispatches on the
 checker's identity REGIME rather than reading a single field:

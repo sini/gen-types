@@ -1,5 +1,5 @@
 # gen-types: checker identity — __name, __id, and conservative equality (typeEq /
-# intensionalEq), which dispatches on the checker's identity REGIME.
+# conservativeEq), which dispatches on the checker's identity REGIME.
 { genTypes, ... }:
 let
   t = genTypes;
@@ -84,8 +84,8 @@ in
     expr = t.typeEq (t.listOf t.int) (t.listOf t.str);
     expected = false;
   };
-  flake.tests.types-identity.test-intensionalEq-alias = {
-    expr = t.intensionalEq t.bool t.bool;
+  flake.tests.types-identity.test-conservativeEq-alias = {
+    expr = t.conservativeEq t.bool t.bool;
     expected = true;
   };
   flake.tests.types-identity.test-str-alias-shares-identity = {
@@ -163,14 +163,15 @@ in
     expected = false;
   };
 
-  flake.tests.types-identity.test-intensionalEq-is-typeEq-on-every-regime = {
+  flake.tests.types-identity.test-conservativeEq-is-typeEq-on-every-regime = {
     expr = {
-      unmigrated = t.intensionalEq t.int t.int == t.typeEq t.int t.int;
+      unmigrated = t.conservativeEq t.int t.int == t.typeEq t.int t.int;
       minted =
-        t.intensionalEq (mintedChecker "a" "type:dddd") (mintedChecker "b" "type:dddd")
+        t.conservativeEq (mintedChecker "a" "type:dddd") (mintedChecker "b" "type:dddd")
         == t.typeEq (mintedChecker "a" "type:dddd") (mintedChecker "b" "type:dddd");
       unmintable =
-        t.intensionalEq unmintableChecker unmintableChecker == t.typeEq unmintableChecker unmintableChecker;
+        t.conservativeEq unmintableChecker unmintableChecker
+        == t.typeEq unmintableChecker unmintableChecker;
     };
     expected = {
       unmigrated = true;

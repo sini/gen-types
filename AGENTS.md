@@ -97,7 +97,7 @@ Entry: `inputs.gen-types.lib` (flake, `flake.nix:16`). Root `default.nix` is a F
 
 | Export | Signature |
 |---|---|
-| `typeEq` / `intensionalEq` | `checker -> checker -> bool` (conservative equality, dispatched on the checker's `__mint` tag; the two are the same function) |
+| `typeEq` / `conservativeEq` | `checker -> checker -> bool` (conservative equality, dispatched on the checker's `__mint` tag; the two are the same function). `conservativeEq` is Palmer's own term — *intensional* qualifies the FUNCTION, never the equality |
 
 ## Entry points by task
 
@@ -149,7 +149,7 @@ The README states no result and carries no Implements/Informed-by split; the cit
 **Claims**
 
 - **Findler & Felleisen (2002), contracts** — `lib/checkers.nix:4-7` calls a type "a boundary that blames the value on mismatch", restricted to a first-order core; `README.md:8-10` states the same as "a type is a predicate boundary".
-- **Palmer's conservative equality (§2.3, §5.3)** — `lib/default.nix`, bindings `identityOf` and `conservativeEq`, which `typeEq` and `intensionalEq` both are. The relation dispatches on the checker's `__mint` tag over three regimes (minted / unmintable / unmigrated) rather than reading one field. Fig. 5 is a **conjunction** over identity AND closure, so a name-only relation ships one conjunct and coarsens in the direction §2.3 forbids; it survives here only on the unmigrated regime, which is where every shipped checker currently sits — `lib/checkers.nix`, binding `mkId`, still derives `__id` from `name` alone, and no producer stamps `__mint` yet. The unmintable arm compares the checker record **minus `__id`** (binding `comparisonSubject`), never a component list — `__id` is an accessor, and in that regime it *is* the named refusal, so comparing the record whole forces the refusal inside the decision it exists to permit. That one exclusion suffices: `__mint.minted` is the only other refusal-valued accessor and the tagged sum shields it, its minted and sealed arms living under different key names, which Nix `==` decides on before forcing any value.
+- **Palmer's conservative equality (§2.3, §5.3)** — `lib/default.nix`, bindings `identityOf` and `conservativeEq`, which `typeEq` is an alias of. The relation dispatches on the checker's `__mint` tag over three regimes (minted / unmintable / unmigrated) rather than reading one field. Fig. 5 is a **conjunction** over identity AND closure, so a name-only relation ships one conjunct and coarsens in the direction §2.3 forbids; it survives here only on the unmigrated regime, which is where every shipped checker currently sits — `lib/checkers.nix`, binding `mkId`, still derives `__id` from `name` alone, and no producer stamps `__mint` yet. The unmintable arm compares the checker record **minus `__id`** (binding `comparisonSubject`), never a component list — `__id` is an accessor, and in that regime it *is* the named refusal, so comparing the record whole forces the refusal inside the decision it exists to permit. That one exclusion suffices: `__mint.minted` is the only other refusal-valued accessor and the tagged sum shields it, its minted and sealed arms living under different key names, which Nix `==` decides on before forcing any value.
 - **The `id_hash` discipline of gen-schema** — `README.md` § *Conservative equality over checker identity* and `lib/checkers.nix`, binding `mkId`, state `__id` uses the same hashing discipline. Cross-repo citation.
 
 **Influences** (named in comments, no result claimed)
@@ -167,7 +167,7 @@ nix eval --json .#lib --apply 'l: { top = builtins.attrNames l; refinements = bu
 Current output (verbatim):
 
 ```json
-{"refinements":["nonEmpty","positive","tcpPort"],"top":["any","attrs","attrsOf","bool","defaultOnError","derivation","enum","float","formatErrors","function","int","intensionalEq","intersection","list","listOf","mkValidator","never","null","number","option","optionalAttr","path","pathLike","refined","refinements","runValidators","str","strict","string","struct","tuple","typeEq","typedef","typedef'","union"]}
+{"refinements":["nonEmpty","positive","tcpPort"],"top":["any","attrs","attrsOf","bool","conservativeEq","defaultOnError","derivation","enum","float","formatErrors","function","int","intersection","list","listOf","mkValidator","never","null","number","option","optionalAttr","path","pathLike","refined","refinements","runValidators","str","strict","string","struct","tuple","typeEq","typedef","typedef'","union"]}
 ```
 
 `refinements` is the only nested namespace of exports on `lib` (nullary checker records are attrsets too; an `isAttrs` sweep returns 16 names). `override` and `__refinements` are fields of returned checker VALUES, not exports, so they do not appear above.
