@@ -19,6 +19,12 @@
       inherit inputs;
       name = "gen-types";
       testModules = ./tests;
-      specialArgs = { inherit genTypes prelude; };
+      # `identity` reaches the suite because `tests/entry.nix` applies the STANDALONE root entry
+      # with explicit arguments — which is what keeps that cell pure, since supplying both formals
+      # means the shim's fetching defaults are never forced.
+      specialArgs = {
+        inherit genTypes prelude;
+        identity = inputs.gen-identity.lib;
+      };
     };
 }
