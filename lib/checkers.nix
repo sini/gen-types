@@ -6,14 +6,17 @@
 # blames the value on mismatch — restricted to a first-order, allocation-frugal
 # core so it stays a single eval pass on the happy path.
 #
-# Every checker is a record { name; verify; check; __name; __id; }:
+# Every checker is a record { name; verify; check; __name; __mint; __id; }:
 #   name    — full structural name, e.g. "listOf<int>"
 #   verify  — value -> null | errString   (null = ok)
 #   check   — v: v2: throws verify's error on failure, returns v2 on success
 #   __name  — base name with polymorphic metadata stripped ("listOf")
-#   __id    — name-derived intensional identity (Palmer-style, name-only ceiling):
-#             two types are intensionally equal iff their names are, hashed like
-#             gen-schema's id_hash (sha256 over the identifying content).
+#   __mint  — the identity REGIME as a tagged sum, minted over the CONSTRUCTION rather
+#             than over the name: { minted = "type:<digest>"; } where the constructor's
+#             arguments are inert, { unmintable = { ctor; reason; }; } where one of them
+#             is a caller-supplied lambda. This is what the equality relation reads.
+#   __id    — the accessor for a consumer that DEMANDS an identity: the minted value, or
+#             the mint's own named refusal. Lazy, and never what the relation reads.
 #
 # NO nixpkgs.lib here (purity invariant, see ci/tests/types-purity.nix): builtins
 # plus the handful of gen-prelude utilities the substrate already vendors.
@@ -31,6 +34,7 @@ let
     head
     length
     map
+    mapAttrs
     optional
     ;
   inherit (builtins)
@@ -39,6 +43,7 @@ let
     isPath
     removeAttrs
     split
+    tryEval
     typeOf
     ;
   # prelude re-exports these three; taken from builtins keeps the primitive
@@ -129,26 +134,62 @@ let
 
   # ★ THE MINT IS THE SUBSTRATE'S, NOT THIS LIBRARY'S. `mkId` was a SECOND hashing surface —
   # `hashString "sha256" "gen-types|<name>"` — against a ruling that names ONE minting authority
-  # (ADR-0016 ruling 5), and it retires here into `hashIdentity`. A checker's identity is now
-  # kind-tagged like every other minted identity in the ecosystem: `"type:<digest>"`.
+  # (ADR-0016 ruling 5), and it retired into `hashIdentity`. A checker's identity is kind-tagged
+  # like every other minted identity in the ecosystem: `"type:<digest>"`.
   #
   # ★ THE MINT ARRIVES INJECTED because gen-types is a LEAF and the authority used to live
   # downstream of it, in gen-schema — a cycle gen-types could never have closed. That is the whole
   # reason the authority became a dependency-free library of its own, and taking it as a parameter
   # is what a consumer upstream of the old home has to do.
   #
-  # ★ WHAT ENTERS THE PREIMAGE IS THE NAME, AND ONLY THE NAME. A checker's `check` is a bare
-  # lambda, and no preimage over a lambda can be TOTAL — so a mint over the whole checker record
-  # would merge behaviourally distinct checkers, which for a relation that MINTS is the unsafe
-  # direction with no safe alternative. The name is what `mkId` hashed too; what changed is the
-  # authority and the tag, not the distinguishing content.
-  mintType = name: identity.hashIdentity "type" [ "name" ] (_: name);
-
-  self = fix (checkers: {
-    # ── custom-type constructors ──
-
-    # Declare a type from an option<str> verifier (null on success, message on error).
-    typedef' = name: verify: {
+  # ★★ WHAT ENTERS THE PREIMAGE IS THE CONSTRUCTION — the constructor and its inert argument
+  # value — AND NEVER THE NAME. A name is a RENDERING of a type, and a rendering is lossy: four
+  # constructor families took content the name does not determine, and all four collided under
+  # `typeEq` on the tree before this landing. Measured, one run, with `listOf<int>` vs
+  # `listOf<str>` as the live control returning FALSE: `refined int positive` == `refined int
+  # tcpPort` · `strict ["a"]` == `strict ["b"]` (every strict type is named "strict") · `enum
+  # "colour" ["red"]` == `enum "colour" ["blue"]` · `struct "cfg" {a=int;}` == `struct "cfg"
+  # {a=str;}` — all TRUE. That is Milner 1978 §3.3's failure exactly: semantically distinct values
+  # admitted under one type, which is the direction a type discipline exists to exclude.
+  #
+  # ★ AND IT TRAVELLED, which is why the repair belongs here rather than in the four families.
+  # Every combinator builds its name from its members' NAMES — `listOf<${t.name}>` — so one
+  # colliding member collided the whole tree above it, and a fix scoped to the four constructors
+  # would have left `listOf<cfg>` merging two different `cfg`s. A component that is a checker now
+  # enters as its IDENTITY, so a composite is structural exactly as deep as its components are.
+  #
+  # ★ `ctor` AND `args` ARE BOTH REQUIRED AND NEITHER IS DEFAULTED. A defaulted argument value is
+  # a silent name-mint at the one place the content is load-bearing — the defect above wearing a
+  # new spelling. `ctor` is not redundant beside `args`: `strict [ "a" ]` and a hypothetical
+  # `enum "strict" [ "a" ]` agree on every other component, and the constructor tag is what
+  # separates them.
+  #
+  # ★★ THE REGIME IS DECIDED BY THE MINT, never by a second predicate kept in step by hand. The
+  # encoder is total — it either encodes every node or refuses BY NAME — so handing it `args` and
+  # reading its answer IS the classification. That is what routes a `struct` carrying a caller
+  # `verify` lambda, a `refined` over caller predicates, and an `enum` over a path to the sealed
+  # regime for the encoder's own stated reason, with no list of sealed cases here to fall out of
+  # date. `tryEval` contains it because every refusal in the mint is a `throw` rather than a
+  # builtin's own abort — which is the property gen-identity's encoder was built to have.
+  mkChecker =
+    ctor: args: name: verify:
+    let
+      mint =
+        identity.hashIdentity "type"
+          [
+            "ctor"
+            "args"
+          ]
+          (
+            l:
+            {
+              inherit ctor args;
+            }
+            .${l}
+          );
+      attempt = tryEval mint;
+    in
+    {
       inherit name verify;
       check =
         v: v2:
@@ -159,39 +200,97 @@ let
       __name = baseName name;
 
       # ★ `__mint` IS A TAGGED SUM AND IT IS TOTAL — every checker carries it, and a reader
-      # dispatches on the TAG rather than branching on the field's presence. A checker minted over
-      # its name is `minted`; nothing here is sealed, because a name is always mint-admissible.
-      # The relation in `lib/default.nix` reads this and never `__id`.
-      __mint.minted = mintType name;
+      # dispatches on the TAG rather than branching on the field's presence. The relation in
+      # `lib/default.nix` reads this and never `__id`.
+      #
+      # The sealed arm carries the constructor and points at the accessor rather than restating
+      # the encoder's reason: `__id` re-runs the same mint UNCAUGHT, so a reader that wants the
+      # cause gets the encoder's own named refusal — "a lambda in an identity position" and the
+      # rest — instead of a paraphrase this file would own and drift from.
+      __mint =
+        if attempt.success then
+          { minted = attempt.value; }
+        else
+          {
+            unmintable = {
+              inherit ctor;
+              reason = "the mint refuses this construction's arguments; demand `__id` for its named refusal";
+            };
+          };
 
-      # `__id` survives as the ACCESSOR a consumer reads when it DEMANDS an identity — it returns
-      # the minted value, and on a value with no mintable identity it would throw by name. It is
+      # `__id` is the ACCESSOR a consumer reads when it DEMANDS an identity — it returns the
+      # minted value, and on a value with no mintable identity it IS the named refusal. It is
       # LAZY, so a consumer that never demands one never hashes; and it is deliberately NOT what
       # the equality relation reads, because demanding an identity of a sealed value is a refusal
       # while DECIDING about one is not.
-      __id = mintType name;
+      __id = mint;
     };
 
+  # A component that is itself a checker enters the preimage as its IDENTITY. A component with no
+  # mintable identity refuses the composite BY NAME rather than through a missing attribute, so
+  # what a reader sees is a refusal it can act on and not an evaluator message about an attrset.
+  #
+  # ★ ENTERING AS AN IDENTITY RATHER THAN AS A VALUE IS WHAT KEEPS TYPE NESTING OFF THE ENCODER'S
+  # BOUNDS. An identity is a fixed 69 characters whatever it stands for, so a composite's preimage
+  # is flat in the depth of the type it describes: measured, a 300-deep `listOf` chain mints and
+  # separates from a 299-deep one, well past gen-identity's depth bound of 512 levels. The bound is
+  # still real and still reachable — the control in the same run is a 600-deep list handed to `enum`
+  # as a MEMBER, which is caller data, takes the full walk, and refuses.
+  idOf =
+    t: t.__mint.minted or (throw "identity: component type '${t.name}' has no mintable identity");
+
+  # The substrate's own nullary vocabulary. `prim` is a REGISTRY of one argument — the primitive's
+  # name — and it is total precisely because this library owns the predicate that name is bound to,
+  # which is what the public `typedef` below cannot say of a caller's.
+  prim = name: pred: mkChecker "prim" name name (v: if pred v then null else typeError name v);
+  prim' = name: verify: mkChecker "prim" name name verify;
+
+  self = fix (checkers: {
+    # ── custom-type constructors ──
+
+    # Declare a type from an option<str> verifier (null on success, message on error).
+    #
+    # ★ A CALLER-DECLARED TYPE IS SEALED, and that is ADR-0034's sealed limb rather than an
+    # omission here. The verifier is a caller-supplied lambda; Nix exposes no eliminator for a
+    # closure — no builtin reads a captured environment or a body — so no preimage over one can be
+    # TOTAL, and an identity minted over a partial preimage merges behaviourally distinct
+    # checkers. Minting over the NAME instead is the rejected remedy: it is a name-only identity at
+    # a site that mints, and two callers declaring "port" over different predicates would share it.
+    #
+    # ★ WHAT WOULD HAVE TO CHANGE, named as the burden asymmetry requires: a caller whose predicate
+    # is a FIRST-ORDER TERM the substrate interprets — a constructor plus an inert argument, built
+    # through `mkChecker` — mints. That is the migration ADR-0034 requires and `refined` is the
+    # ecosystem's first case of. Until then `typeEq` DECIDES about such a type by comparing the
+    # reified record, which is finer than the name relation and never coarser.
+    typedef' =
+      name: verify:
+      mkChecker "typedef"
+        (throw "identity: type '${name}' is declared from a caller-supplied verifier, which is a lambda and has no total preimage")
+        name
+        verify;
+
     # Declare a type from a bool predicate; the standard type-mismatch message is
-    # synthesized on failure.
+    # synthesized on failure. Sealed for the same reason as `typedef'`.
     typedef = name: pred: checkers.typedef' name (v: if pred v then null else typeError name v);
 
     # ── primitives (builtins.is* wrappers) ──
-    string = checkers.typedef "string" isString;
+    # These take `prim` rather than the public `typedef`: their predicates are this library's, so
+    # the name is a coordinate in a closed vocabulary and the preimage over it is total.
+    string = prim "string" isString;
     str = checkers.string;
-    int = checkers.typedef "int" isInt;
-    bool = checkers.typedef "bool" isBool;
-    float = checkers.typedef "float" isFloat;
-    number = checkers.typedef "number" (v: isInt v || isFloat v);
-    path = checkers.typedef "path" isPath;
-    pathLike = checkers.typedef "pathLike" (v: isPath v || isDerivation v || isString v);
-    attrs = checkers.typedef "attrs" isAttrs;
-    list = checkers.typedef "list" isList;
-    function = checkers.typedef "function" isFunction;
-    derivation = checkers.typedef "derivation" isDerivation;
-    null = checkers.typedef "null" isNull;
-    any = checkers.typedef' "any" (_: null);
-    never = checkers.typedef "never" (_: false);
+    int = prim "int" isInt;
+    bool = prim "bool" isBool;
+    float = prim "float" isFloat;
+    number = prim "number" (v: isInt v || isFloat v);
+    path = prim "path" isPath;
+    pathLike = prim "pathLike" (v: isPath v || isDerivation v || isString v);
+    attrs = prim "attrs" isAttrs;
+    list = prim "list" isList;
+    function = prim "function" isFunction;
+    derivation = prim "derivation" isDerivation;
+    null = prim "null" isNull;
+    any = prim' "any" (_: null);
+    never = prim "never" (_: false);
 
     # ── polymorphic combinators ──
 
@@ -201,7 +300,9 @@ let
       let
         name = "option<${t.name}>";
       in
-      checkers.typedef' name (v: if v == null then null else addContext "in ${name}" (t.verify v));
+      mkChecker "option" (idOf t) name (
+        v: if v == null then null else addContext "in ${name}" (t.verify v)
+      );
 
     # listOf<t>: a list whose every element is a t.
     listOf =
@@ -209,7 +310,7 @@ let
       let
         name = "listOf<${t.name}>";
       in
-      checkers.typedef' name (
+      mkChecker "listOf" (idOf t) name (
         v: if !isList v then typeError name v else addContext "in ${name} element" (firstError t.verify v)
       );
 
@@ -219,7 +320,7 @@ let
       let
         name = "attrsOf<${t.name}>";
       in
-      checkers.typedef' name (
+      mkChecker "attrsOf" (idOf t) name (
         v:
         if !isAttrs v then
           typeError name v
@@ -228,6 +329,8 @@ let
       );
 
     # union<a,b,…>: a value satisfying at least one member (short-circuits).
+    # Members enter the preimage IN ORDER: `union [ a b ]` and `union [ b a ]` accept the same
+    # values but report a different name on failure, and finer is the safe direction here.
     union =
       types:
       assert isList types;
@@ -235,7 +338,9 @@ let
         name = "union<${concatStringsSep "," (map (t: t.name) types)}>";
         funcs = map (t: t.verify) types;
       in
-      checkers.typedef' name (v: if any (f: f v == null) funcs then null else typeError name v);
+      mkChecker "union" (map idOf types) name (
+        v: if any (f: f v == null) funcs then null else typeError name v
+      );
 
     # intersection<a,b,…>: a value satisfying every member.
     intersection =
@@ -245,13 +350,15 @@ let
         name = "intersection<${concatStringsSep "," (map (t: t.name) types)}>";
         funcs = map (t: t.verify) types;
       in
-      checkers.typedef' name (v: addContext "in ${name}" (firstFailing funcs v));
+      mkChecker "intersection" (map idOf types) name (v: addContext "in ${name}" (firstFailing funcs v));
 
     # enum<name>: membership in a fixed set of literals.
+    # The name is an ARGUMENT here rather than a rendering — it reaches the failure message — so it
+    # enters the preimage beside the members instead of standing in for them.
     enum =
       name: elems:
       assert isList elems;
-      checkers.typedef' name (
+      mkChecker "enum" { inherit name elems; } name (
         v: if elem v elems then null else "${toPretty v} is not a member of enum '${name}'"
       );
 
@@ -273,7 +380,7 @@ let
             in
             if e != null then "in element ${toString i}: ${e}" else walk v (i + 1);
       in
-      checkers.typedef' name (
+      mkChecker "tuple" (map idOf members) name (
         v:
         if !isList v then
           typeError name v
@@ -289,7 +396,7 @@ let
       let
         name = "optionalAttr<${t.name}>";
       in
-      checkers.typedef' name (v: addContext "in ${name}" (t.verify v));
+      mkChecker "optionalAttr" (idOf t) name (v: addContext "in ${name}" (t.verify v));
 
     # struct<name>{ members }: a record. A freshly constructed struct starts from
     # the policy set total = true, unknown = true, verify = null.
@@ -349,7 +456,25 @@ let
             funcs = memberFuncs ++ optional (!unknown) unknownFunc ++ optional (verify != null) verify;
             verify' = v: if !isAttrs v then typeError name v else addContext ctx (firstFailing funcs v);
           in
-          checkers.typedef' name verify'
+          # ★ THE POLICY SET IS DISTINGUISHING CONTENT, not decoration: `total` and `unknown` change
+          # which values the struct admits, so `.override` yields a DIFFERENT type and must yield a
+          # different identity. They are booleans and enter the mint.
+          #
+          # ★★ `verify` IS WHERE THE PER-COMPONENT READING PAYS. It is a caller-supplied lambda, so
+          # a struct carrying one is SEALED — and a struct without one is MINTED, over its members'
+          # identities and its policy. The limb is per COMPONENT rather than per constructor, which
+          # is what stops one struct's extra invariant from dragging every struct onto the
+          # comparison limb. Nothing here tests for it: `verify = null` encodes and a lambda is
+          # refused by the encoder, so the two arms fall out of the mint's own totality.
+          mkChecker "struct" {
+            inherit
+              name
+              total
+              unknown
+              verify
+              ;
+            members = mapAttrs (_: idOf) members;
+          } name verify'
           // {
             override = delta: build ({ inherit total unknown verify; } // delta);
           };
@@ -357,4 +482,13 @@ let
       build { };
   });
 in
-self
+# The checker set is the library's public surface; `mkChecker` and `idOf` are the identity core
+# the two fold-in files build on, and they are exported HERE rather than onto the set itself so
+# that reaching them stays a `lib/`-internal privilege. A fold-in constructor needs the same
+# by-construction identity every constructor above has — that is the whole point of there being
+# one producer — but a CALLER stating a construction is the migration ADR-0034 leaves open, and
+# publishing the door before the vocabulary is picked would decide it by accretion.
+{
+  checkers = self;
+  inherit mkChecker idOf;
+}

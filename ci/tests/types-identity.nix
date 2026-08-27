@@ -4,9 +4,11 @@
 let
   t = genTypes;
 
-  # Fixtures for the two regimes a producer stamps. Every SHIPPED checker carries no
-  # `__mint` and is therefore unmigrated, which is why the cells below are the only
-  # ones that exercise the other two arms.
+  # Fixtures for the two regimes a producer stamps. The producer has since landed and
+  # every SHIPPED checker now carries a `__mint`, so these hand-built records are what
+  # pin the RELATION's arms independently of what the constructors currently emit — a
+  # digest pair the constructors cannot be made to produce, and a sealed record whose
+  # accessor detonates on contact.
   #
   # ★ THESE ARE SITE-7 SHAPED, AND CARRYING `__id` IS THE POINT. The producer keeps
   # `__id` as the accessor a consumer reads when it DEMANDS an identity: it returns the
@@ -49,6 +51,21 @@ let
   mintedChecker = mkMinted;
   unmintableChecker = mkUnmintable "refined<str>";
   evaluates = e: (builtins.tryEval e).success;
+
+  # A record carrying no `__mint` at all — a foreign checker, or one built before the
+  # producer landed. Nothing this library constructs can be one, so the UNMIGRATED arm
+  # has no other subject and would otherwise be asserted about by nothing.
+  unmigratedChecker = n: {
+    name = n;
+    __name = n;
+    verify = _: null;
+    check = v: _: v;
+  };
+
+  # The identity REGIME as a readable tag, so a cell states which arm a construction
+  # lands on rather than asserting a digest nobody can read.
+  regimeOf = c: if c.__mint ? minted then "minted" else "unmintable:${c.__mint.unmintable.ctor}";
+  r = t.refinements;
 in
 {
   flake.tests.types-identity.test-basename-primitive = {
@@ -106,11 +123,188 @@ in
     expected = true;
   };
 
+  # ── the four colliding constructor families ─────────────────────────────────
+  #
+  # ★★★ THIS IS THE CELL THE DEFECT LIVED BEHIND. `__id` hashed the type NAME alone, and
+  # a name is a lossy rendering of a type: `strict` names every instance "strict", `enum`
+  # and `struct` take their name from the caller, and `refined<t>` says nothing about the
+  # predicates. Measured on the tree before this landing, every arm below read TRUE —
+  # semantically distinct types admitted as one, which is precisely the failure Milner
+  # 1978 §3.3 holds a type discipline responsible for excluding.
+  #
+  # The two controls are what make the reading mean something, and they sit in the same
+  # cell so they cannot be run separately from it: `listOf<int>` vs `listOf<str>` was
+  # FALSE before and after — the relation could always separate where the name encoded
+  # the structure — and the green twin says the relation still answers TRUE where it
+  # should, so a fix that simply broke equality everywhere is not what this reports.
+  flake.tests.types-identity.test-four-families-no-longer-collide = {
+    expr = {
+      refined = t.typeEq (t.refined t.int r.positive) (t.refined t.int r.tcpPort);
+      strict = t.typeEq (t.strict [ "a" ]) (t.strict [ "b" ]);
+      enum = t.typeEq (t.enum "colour" [ "red" ]) (t.enum "colour" [ "blue" ]);
+      struct = t.typeEq (t.struct "cfg" { a = t.int; }) (t.struct "cfg" { a = t.str; });
+      # The enum name is an ARGUMENT — it reaches the failure message — so two enums over
+      # the same members under different names are distinct types.
+      enumName = t.typeEq (t.enum "colour" [ "red" ]) (t.enum "size" [ "red" ]);
+      # GREEN TWIN: same construction, separately built, still equal in every family that
+      # mints. `refined` is absent here on purpose — it is sealed, and its twin is the
+      # allocation-artefact cell below.
+      twinStrict = t.typeEq (t.strict [ "a" ]) (t.strict [ "a" ]);
+      twinEnum = t.typeEq (t.enum "colour" [ "red" ]) (t.enum "colour" [ "red" ]);
+      twinStruct = t.typeEq (t.struct "cfg" { a = t.int; }) (t.struct "cfg" { a = t.int; });
+      # CONTROL, unchanged by this landing in both directions.
+      controlDistinct = t.typeEq (t.listOf t.int) (t.listOf t.str);
+      controlSame = t.typeEq (t.listOf t.int) (t.listOf t.int);
+    };
+    expected = {
+      refined = false;
+      strict = false;
+      enum = false;
+      struct = false;
+      enumName = false;
+      twinStrict = true;
+      twinEnum = true;
+      twinStruct = true;
+      controlDistinct = false;
+      controlSame = true;
+    };
+  };
+
+  # ★★ AND THE COLLISION TRAVELLED, which is why the repair is at the one record producer
+  # and not in the four constructors. Every combinator builds its name from its members'
+  # NAMES, so a colliding member collided the whole tree above it: measured before this
+  # landing, `listOf` over two different `struct "cfg"` and `attrsOf` over two different
+  # `enum "e"` both read TRUE. A member now enters its composite's preimage as its
+  # IDENTITY, so a composite is structural exactly as deep as its members are.
+  flake.tests.types-identity.test-collision-does-not-travel-through-combinators = {
+    expr = {
+      listOfStructs = t.typeEq (t.listOf (t.struct "cfg" { a = t.int; })) (
+        t.listOf (t.struct "cfg" { a = t.str; })
+      );
+      attrsOfEnums = t.typeEq (t.attrsOf (t.enum "e" [ "a" ])) (t.attrsOf (t.enum "e" [ "b" ]));
+      tupleOfStructs = t.typeEq (t.tuple [ (t.struct "cfg" { a = t.int; }) ]) (
+        t.tuple [ (t.struct "cfg" { a = t.str; }) ]
+      );
+      # A composite over a SEALED member is sealed too: no preimage over it is total, so
+      # it refuses rather than minting over the part it can see.
+      composingASealedMember = regimeOf (t.listOf (t.refined t.int r.positive));
+      # CONTROL: composites over EQUAL members still compare equal, so this is a finer
+      # relation and not a broken one.
+      controlEqualMembers = t.typeEq (t.listOf (t.struct "cfg" { a = t.int; })) (
+        t.listOf (t.struct "cfg" { a = t.int; })
+      );
+    };
+    expected = {
+      listOfStructs = false;
+      attrsOfEnums = false;
+      tupleOfStructs = false;
+      composingASealedMember = "unmintable:listOf";
+      controlEqualMembers = true;
+    };
+  };
+
+  # The three regimes are decided BY CONSTRUCTOR at the declaration, never by inspecting a
+  # value — and the decision is the MINT'S: `args` either encodes totally or the encoder
+  # refuses it by name. So the sealed rows are sealed for a stated reason (a caller lambda
+  # in the arguments) rather than by a list in the library that could drift.
+  #
+  # ★ `struct` is the per-component reading paying out: the SAME constructor mints without
+  # a caller `verify` and seals with one, so one struct's extra invariant does not drag
+  # every struct onto the comparison limb.
+  #
+  # ★★ THIS CELL IS ALSO THE GUARD ON A MINT THAT STOPS WORKING, which is the one price of
+  # letting the mint decide the regime: a `hashIdentity` that refused everything would
+  # send every construction to the sealed arm, and `typeEq` would keep answering — finer,
+  # so never unsound, but silently less able. Nothing else here would notice, because a
+  # sealed answer is a legitimate answer. Pinning the regime PER CONSTRUCTOR is what makes
+  # that visible: the minted rows flip to `unmintable:…` and this cell reddens.
+  flake.tests.types-identity.test-identity-regime-is-decided-by-constructor = {
+    expr = {
+      prim = regimeOf t.int;
+      listOf = regimeOf (t.listOf t.int);
+      enum = regimeOf (t.enum "colour" [ "red" ]);
+      strict = regimeOf (t.strict [ "a" ]);
+      struct = regimeOf (t.struct "cfg" { a = t.int; });
+      structWithCallerVerify = regimeOf ((t.struct "cfg" { a = t.int; }).override { verify = _: null; });
+      refined = regimeOf (t.refined t.int r.positive);
+      callerTypedef = regimeOf (t.typedef "port" (v: v > 0));
+    };
+    expected = {
+      prim = "minted";
+      listOf = "minted";
+      enum = "minted";
+      strict = "minted";
+      struct = "minted";
+      structWithCallerVerify = "unmintable:struct";
+      refined = "unmintable:refined";
+      callerTypedef = "unmintable:typedef";
+    };
+  };
+
+  # A sealed construction gets NO identity and a NAMED refusal when one is demanded — the
+  # refusal being reachable is what rules out the alternative of dropping `__id`, which
+  # would trade a detonation for a silent missing attribute. These are the SHIPPED
+  # constructors rather than fixtures, so the cell fails if a constructor quietly starts
+  # minting over a partial preimage.
+  flake.tests.types-identity.test-sealed-constructions-refuse-when-an-identity-is-demanded = {
+    expr = {
+      refined = evaluates (t.refined t.int r.positive).__id;
+      structWithCallerVerify = evaluates ((t.struct "s" { }).override { verify = _: null; }).__id;
+      callerTypedef = evaluates (t.typedef "port" (v: v > 0)).__id;
+      # CONTROL, same run: the same demand on a minted checker returns a kind-tagged
+      # identity cleanly, so these refusals are the sealed regime and not a broken mint.
+      mintedStillAnswers =
+        builtins.match "type:[0-9a-f]{64}" (t.struct "cfg" { a = t.int; }).__id != null;
+    };
+    expected = {
+      refined = false;
+      structWithCallerVerify = false;
+      callerTypedef = false;
+      mintedStillAnswers = true;
+    };
+  };
+
+  # The struct policy set changes which values the struct ADMITS, so `.override` yields a
+  # different type and owes a different identity. Under a name-only identity it could not:
+  # `.override` does not touch the name.
+  flake.tests.types-identity.test-struct-policy-is-distinguishing-content = {
+    expr = {
+      total = t.typeEq (t.struct "s" { a = t.int; }) (
+        (t.struct "s" { a = t.int; }).override { total = false; }
+      );
+      unknown = t.typeEq (t.struct "s" { a = t.int; }) (
+        (t.struct "s" { a = t.int; }).override { unknown = false; }
+      );
+      # CONTROL: an override that restates the shipped policy is the same type.
+      identityOverride = t.typeEq (t.struct "s" { a = t.int; }) (
+        (t.struct "s" { a = t.int; }).override { total = true; }
+      );
+    };
+    expected = {
+      total = false;
+      unknown = false;
+      identityOverride = true;
+    };
+  };
+
+  # The constructor TAG is load-bearing beside the arguments, and this is the pair that
+  # says so: `option t` and `listOf t` both take one checker, so their argument values are
+  # byte-identical and the name is not in the preimage. Only the tag separates them.
+  #
+  # ★ THIS CELL IS NOT ONE OF THE LANDING'S SEEDED REDS, stated so its green is not read as
+  # evidence of one. It passed on the pre-fix tree too, where the differing NAMES carried
+  # it. What it guards is the construction going forward, and it is armed against exactly
+  # that: with the `ctor` label removed from the preimage this cell FAILS while the shipped
+  # tree passes — measured in one run.
+  flake.tests.types-identity.test-constructor-tag-separates-equal-arguments = {
+    expr = t.typeEq (t.option t.int) (t.listOf t.int);
+    expected = false;
+  };
+
   # ── conservative equality by identity REGIME ────────────────────────────────
-  # Every cell above exercises the UNMIGRATED arm: no producer stamps `__mint` on a
-  # checker yet, so `typeEq` is name equality there and their answers are unchanged.
-  # The cells below cover the two regimes a producer stamps, so the dispatch is
-  # asserted BEFORE its producer lands rather than after.
+  # The cells above run on SHIPPED constructors, every one of which is stamped, so they
+  # exercise the minted and sealed arms. The cells below pin the relation's arms on
+  # fixtures instead — the shapes a constructor cannot be made to emit.
 
   flake.tests.types-identity.test-minted-same-digest-eq = {
     expr = t.typeEq (mintedChecker "a" "type:dddd") (mintedChecker "b" "type:dddd");
@@ -175,9 +369,30 @@ in
     expected = false;
   };
 
+  # The UNMIGRATED arm stays live for a FOREIGN record — one this library did not build,
+  # or one built before the producer landed — and nothing gen-types constructs is one any
+  # more, so without this fixture the arm has no subject and reads green as silence.
+  flake.tests.types-identity.test-unmigrated-arm-still-decides-on-name = {
+    expr = {
+      sameName = t.typeEq (unmigratedChecker "foo") (unmigratedChecker "foo");
+      differentName = t.typeEq (unmigratedChecker "foo") (unmigratedChecker "bar");
+      # CONTROL: a stamped checker on one side leaves the arm — the pair is no longer
+      # both-unmigrated, so it falls to the whole-record comparison rather than to a name
+      # match against a minted value.
+      mixedWithMinted = t.typeEq (unmigratedChecker "int") t.int;
+    };
+    expected = {
+      sameName = true;
+      differentName = false;
+      mixedWithMinted = false;
+    };
+  };
+
   flake.tests.types-identity.test-conservativeEq-is-typeEq-on-every-regime = {
     expr = {
-      unmigrated = t.conservativeEq t.int t.int == t.typeEq t.int t.int;
+      unmigrated =
+        t.conservativeEq (unmigratedChecker "foo") (unmigratedChecker "foo")
+        == t.typeEq (unmigratedChecker "foo") (unmigratedChecker "foo");
       minted =
         t.conservativeEq (mintedChecker "a" "type:dddd") (mintedChecker "b" "type:dddd")
         == t.typeEq (mintedChecker "a" "type:dddd") (mintedChecker "b" "type:dddd");

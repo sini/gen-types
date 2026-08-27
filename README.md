@@ -69,7 +69,8 @@ Every constructor returns a record:
   verify;  # value -> null | errString      (null = ok)
   check;   # v: v2: throws verify's error on failure, else returns v2
   __name;  # base name with polymorphic metadata stripped ("listOf")
-  __id;    # name-derived intensional identity (sha256, lazy)
+  __mint;  # tagged identity regime: { minted = "type:<sha256>"; } | { unmintable = { ctor; reason; }; }
+  __id;    # the accessor for a consumer DEMANDING an identity: the minted value, or a named refusal (lazy)
 }
 ```
 
@@ -188,11 +189,54 @@ checker's identity REGIME rather than reading a single field:
 | unmintable | `__mint`, no `minted` | Nix `==` on the checker record **minus `__id`** |
 | unmigrated | no `__mint` | `name` equality |
 
-No producer stamps a checker yet, so **every shipped checker is unmigrated** and the
-relation is byte-for-byte the one it replaces — `__id` was a pure function of `name`.
-The dispatch is what makes the reader total ahead of that producer: `__mint` is a tagged
-sum, and a reader that branched on field presence and then read `.minted` raw would abort
+Every checker this library constructs is stamped, so the **unmigrated** arm now serves
+only a *foreign* record — one gen-types did not build. `__mint` is a tagged sum, and a
+reader that branched on field presence and then read `.minted` raw would abort
 uncatchably on a checker that has no mintable identity.
+
+### What a checker's identity is minted over
+
+**The construction, never the name.** A checker's preimage is the constructor that built
+it plus that constructor's inert argument value. A name is a *rendering* of a type, and a
+rendering is lossy — which is not a theoretical worry but a measured collision in four
+constructor families at once, all four reading `true` before this landing:
+
+| construction | why the name lost it |
+|---|---|
+| `refined int positive` vs `refined int tcpPort` | both are named `refined<int>`; the predicates are not in the name |
+| `strict [ "a" ]` vs `strict [ "b" ]` | *every* strict type is named `"strict"` |
+| `enum "colour" [ "red" ]` vs `enum "colour" [ "blue" ]` | the name is the caller's, the members are not in it |
+| `struct "cfg" { a = int; }` vs `struct "cfg" { a = str; }` | likewise for members and the policy set |
+
+And it travelled: every combinator builds its name from its members' *names*, so one
+colliding member collided the whole tree above it — `listOf<cfg>` merged two different
+`cfg`s. A member therefore enters its composite's preimage as its **identity**, and a
+composite is structural exactly as deep as its members are.
+
+**The regime is decided by the mint, not by a list kept in step by hand.** The encoder is
+total: it encodes every node of an inert value or refuses by name. So handing it the
+constructor's arguments *is* the classification, and the sealed cases fall out of it —
+
+| construction | regime | because |
+|---|---|---|
+| primitives, `option`/`listOf`/`attrsOf`/`union`/`intersection`/`tuple`/`optionalAttr`, `enum`, `strict`, `struct` | **minted** | every argument is inert, members entering as their own identities |
+| `struct(…).override { verify = …; }` | **unmintable** | the extra invariant is a caller-supplied lambda |
+| `refined base refs` | **unmintable** | a refinement's `check` is a caller-supplied lambda |
+| `typedef` / `typedef'` | **unmintable** | a caller-declared type is a caller-supplied lambda |
+
+The limbs apply per **component**, which is why the same `struct` constructor mints
+without a caller `verify` and seals with one: a single sealed component does not drag its
+whole constructor family onto the comparison limb.
+
+**A sealed site owes an argued impossibility, and it is written at each declaration.** Nix
+exposes no eliminator for a closure — no builtin reads a captured environment or a body —
+so no preimage over one can be total, and an identity over a partial preimage merges
+behaviourally distinct checkers. Minting over the name instead is rejected: that is a
+name-only identity at a site that mints. **What would have to change is named too**: a
+predicate that is a first-order *term* the substrate interprets — a constructor plus an
+inert argument — is mint-admissible, and `refined` is the ecosystem's first migration
+case. Until it migrates, `typeEq` *decides* about two refined types by comparing their
+reified records, which separates them, and demanding `__id` refuses by name.
 
 The unmintable arm compares the record and never a component list: `check` is a bare
 lambda and an attribute selection is an indirection, so a component-wise form is false
@@ -213,22 +257,27 @@ forcing any value. The one path that does force a mint is a minted-against-minte
 comparison, which never reaches this arm — it compares digests, a genuine demand for an
 identity, where a catchable named refusal is the right outcome.
 
-`__id` remains the sha256 content address of the name — the same discipline as
-gen-schema's `id_hash` — and is the accessor for a consumer that DEMANDS an identity. A
-consumer that merely decides dispatches instead of demanding.
+`__id` is the accessor for a consumer that DEMANDS an identity: it yields the minted
+`"type:<sha256>"` — kind-tagged like every other identity the one mint issues — or it *is*
+the named refusal. A consumer that merely decides dispatches instead of demanding.
 
 ```nix
-t.typeEq (t.listOf t.int) (t.listOf t.int)   # => true
-t.typeEq t.int t.str                         # => false
+t.typeEq (t.listOf t.int) (t.listOf t.int)          # => true
+t.typeEq t.int t.str                                # => false
+t.typeEq (t.strict [ "a" ]) (t.strict [ "b" ])      # => false  (both named "strict")
+t.typeEq (t.refined t.int r.positive)
+         (t.refined t.int r.tcpPort)                # => false  (sealed: compares the records)
+(t.refined t.int r.positive).__id                   # => throws: a lambda in an identity position
 ```
 
 ## Handoff to `gen-merge`
 
 The checker record *is* the contract. A merge engine consumes a checker as a leaf's
 option type: after merging definitions it calls `t.verify mergedValue` (`null` = ok,
-else a blame string) and `t.__id` to decide whether two option declarations carry the
-same type. gen-types stays free of any merge/priority notion — that lives entirely in
-the engine above it.
+else a blame string) and `t.typeEq` to decide whether two option declarations carry the
+same type. **`typeEq`, not `__id`** — deciding is not demanding, and a sealed checker has
+an identity to refuse but a record to compare. gen-types stays free of any merge/priority
+notion — that lives entirely in the engine above it.
 
 ## Tests
 
@@ -236,7 +285,7 @@ the engine above it.
 $ cd ci && nix flake check          # or: nix-unit --flake .#tests
 ```
 
-118 nix-unit assertions across primitives, polymorphic combinators, structs, refined,
+136 nix-unit assertions across primitives, polymorphic combinators, structs, refined,
 validators, strict, identity, the `check` contract, and the purity invariant — every
 checker with success (`null`) and failure (exact error string) cases, plus nested and
 recursive types. The purity test walks `lib/` and fails CI on any `nixpkgs.lib`/

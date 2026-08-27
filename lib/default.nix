@@ -7,16 +7,19 @@
 # notion whatsoever; the type value is a pure predicate boundary.
 #
 # The handoff contract is the checker record itself — { name; verify; check; __name;
-# __id } — so gen-merge calls `t.verify` on a merged leaf value (null = ok, else a
-# blame string) and `t.__id` to decide whether two option declarations carry the same
-# type. gen-types is a self-contained LEAF: it must import WITHOUT any registry above
+# __mint; __id } — so gen-merge calls `t.verify` on a merged leaf value (null = ok, else
+# a blame string) and `t.typeEq` to decide whether two option declarations carry the same
+# type. `typeEq` and not `__id`: deciding is not demanding, and a checker whose content is
+# sealed has an identity to REFUSE but a record to compare.
+# gen-types is a self-contained LEAF: it must import WITHOUT any registry above
 # it, which is why it lives in its own flake rather than inside gen-schema.
 #
 # Function of a NAMED dep (gen convention §8): the only dependency is gen-prelude's
 # pure utility surface. No nixpkgs.lib anywhere under lib/ (purity invariant).
 { prelude, identity }:
 let
-  checkers = import ./checkers.nix { inherit prelude identity; };
+  core = import ./checkers.nix { inherit prelude identity; };
+  inherit (core) checkers mkChecker idOf;
   refinedLib = import ./refined.nix { inherit prelude; };
   validateLib = import ./validate.nix { inherit prelude; };
   strictLib = import ./strict.nix { inherit prelude; };
@@ -112,11 +115,11 @@ in
 checkers
 // {
   # refinement contracts
-  refined = refinedLib.refined checkers;
+  refined = refinedLib.refined { inherit mkChecker idOf; };
   inherit (refinedLib) refinements;
 
   # closed-world unknown-key rejection
-  strict = strictLib.strict checkers;
+  strict = strictLib.strict mkChecker;
 
   # validator base (predicate contracts over a kind's instances)
   inherit (validateLib)

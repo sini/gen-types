@@ -20,10 +20,15 @@ let
 in
 {
   # strict : [str] -> checker
-  # Depends on the checker set for typedef' (name/verify/check/__name/__id).
+  # Takes the identity core's `mkChecker` (name/verify/check/__name/__id/__mint).
+  #
+  # ★ EVERY STRICT TYPE IS NAMED "strict", so the name distinguishes NONE of them — `strict [ "a" ]`
+  # and `strict [ "b" ]` compared EQUAL under a name-only identity, measured. The declared key set
+  # is the whole of the distinguishing content and it is a list of strings, so it enters the mint
+  # and this family is structural outright.
   strict =
-    checkers: knownNames:
-    checkers.typedef' "strict" (
+    mkChecker: knownNames:
+    mkChecker "strict" knownNames "strict" (
       v:
       if !isAttrs v then
         "expected an attribute set for strict-key checking, got ${builtins.typeOf v}"
