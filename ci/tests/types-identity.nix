@@ -188,6 +188,21 @@ in
       # A composite over a SEALED member is sealed too: no preimage over it is total, so
       # it refuses rather than minting over the part it can see.
       composingASealedMember = regimeOf (t.listOf (t.refined t.int r.positive));
+
+      # ★★ AND THE SEALED ARM'S PRECISION TRAVELS THE SAME WAY — the exact mirror of the
+      # defect above, pinned on the SHIPPED constructors rather than on a fixture. Two
+      # IDENTICAL `refined` constructions compare UNEQUAL: the sealed arm compares reified
+      # records, `check` is a bare lambda rebuilt per call, and ADR-0034 declares that
+      # precision an allocation artefact. One sealed member then de-reflexivises the whole
+      # tree above it, at any depth. So this landing is two-directional — collisions
+      # removed, and reflexivity-over-construction lost wherever the closure is sealed —
+      # and `controlEqualMembers` below is what keeps that from reading as a broken
+      # relation: over MINTED members the same composites still compare equal.
+      refinedSelf = t.typeEq (t.refined t.int r.positive) (t.refined t.int r.positive);
+      listOfRefinedSelf = t.typeEq (t.listOf (t.refined t.int r.positive)) (
+        t.listOf (t.refined t.int r.positive)
+      );
+
       # CONTROL: composites over EQUAL members still compare equal, so this is a finer
       # relation and not a broken one.
       controlEqualMembers = t.typeEq (t.listOf (t.struct "cfg" { a = t.int; })) (
@@ -199,6 +214,8 @@ in
       attrsOfEnums = false;
       tupleOfStructs = false;
       composingASealedMember = "unmintable:listOf";
+      refinedSelf = false;
+      listOfRefinedSelf = false;
       controlEqualMembers = true;
     };
   };

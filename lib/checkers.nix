@@ -203,10 +203,16 @@ let
       # dispatches on the TAG rather than branching on the field's presence. The relation in
       # `lib/default.nix` reads this and never `__id`.
       #
-      # The sealed arm carries the constructor and points at the accessor rather than restating
-      # the encoder's reason: `__id` re-runs the same mint UNCAUGHT, so a reader that wants the
-      # cause gets the encoder's own named refusal — "a lambda in an identity position" and the
-      # rest — instead of a paraphrase this file would own and drift from.
+      # The sealed arm carries the constructor and points at the accessor rather than restating the
+      # reason: `__id` re-runs the same mint UNCAUGHT, so a reader that wants the cause gets the
+      # refusal that actually fired instead of a paraphrase kept in step by hand.
+      #
+      # ★ WHOSE REFUSAL THAT IS DIFFERS BY FAMILY, AND TWO OF THE THREE IS NOT ALL THREE. `refined`
+      # and a `struct` carrying a caller `verify` reach the encoder with a lambda in `args`, so what
+      # fires is gen-identity's own — "a lambda in an identity position". `typedef`/`typedef'` is the
+      # excluded case and is excluded DELIBERATELY: it passes a throwing `args` of its own, because
+      # the mint sees an argument value and cannot see the NAME of the type being declared, and
+      # naming it is what makes the refusal actionable. That one message is this file's to keep true.
       __mint =
         if attempt.success then
           { minted = attempt.value; }
@@ -355,6 +361,17 @@ let
     # enum<name>: membership in a fixed set of literals.
     # The name is an ARGUMENT here rather than a rendering — it reaches the failure message — so it
     # enters the preimage beside the members instead of standing in for them.
+    #
+    # ★ MEMBERS ENTER IN ORDER AND WITH MULTIPLICITY, AND — UNLIKE `union` AND `strict` — WITH NO
+    # OBSERVABLE THAT DISTINGUISHES THEM. That exclusion is the whole of the difference: `union`
+    # reports its members in order in its own name, and `strict` renders its declared keys in order
+    # in its blame string, so for those two a reordering genuinely is a different type. `enum "e"
+    # [ "a" "b" ]` and `enum "e" [ "b" "a" ]` agree on the name, on the accept relation and on the
+    # blame string — every observable the record carries — and still mint apart; so do `[ "a" "a" ]`
+    # and `[ "a" ]`. Finer is the safe direction for a decision predicate, so this is DECLARED here
+    # rather than repaired: `elems` IS this constructor's argument value and `[ "a" "b" ]` is not
+    # `[ "b" "a" ]` under Nix `==`, so sorting or deduplicating would move the `==`-biconditional off
+    # the argument value and would owe an argument of its own.
     enum =
       name: elems:
       assert isList elems;
