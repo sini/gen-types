@@ -19,7 +19,7 @@ Quoted text is the owner's own `flake.nix` `description` field, verbatim.
 | Matching values by graph POSITION rather than by shape | `gen-select` — "gen-select: selector algebra for attributed graph positions" |
 | Scope-graph evaluation, attribute demand | `gen-scope` — "gen-scope: demand-driven attribute grammar evaluator over algebraic scope graphs" |
 | Layered settings resolution, provenance, refs-as-data | `gen-settings` — "gen-settings — stratified settings resolution as a pure layered fold, with refs-as-data, structured provenance, and the graduated injection construct" |
-| The nixpkgs boundary, value injection, building systems | `gen-flake` — "gen-flake — the pure composition boundary of the pure-gen module ecosystem" |
+| The nixpkgs boundary, value injection, building systems | The hub's `lib.compose` / interim `flakeModules.default` (INTERIM, not yet ADR-0027) — **`gen-flake` DISSOLVED rather than moving as one library.** ADR-0031 F2/F3 sent the compose S2 core to the hub, warm/override/trace to `gen-memo`, the projection + `realize` to `gen-delivery`, and inject/terminals to the crossing's Adapter set. The repo orphans as reference; take no new dependency on it |
 
 ## Exports
 
