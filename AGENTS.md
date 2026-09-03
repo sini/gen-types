@@ -120,6 +120,8 @@ Entry: `inputs.gen-types.lib` (flake, `flake.nix:16`). Root `default.nix` is a F
 
 ## Measured traps
 
+<!-- gen-citations:begin -->
+
 Every row verified in this run by evaluating against `.#lib` (`t`). Shared fixtures: `s = t.struct "point" { x = t.int; y = t.int; }`; `rp = t.refined t.int t.refinements.positive`; `rt = t.refined t.int t.refinements.tcpPort`; `v = t.mkValidator "positive" (i: i.n > 0) "n must be positive"`.
 
 | Trap | Evidence |
@@ -143,6 +145,8 @@ Every row verified in this run by evaluating against `.#lib` (`t`). Shared fixtu
 | Name separators are inconsistent. This no longer reaches identity — the name is not in the preimage — but it is still what a reader sees in a blame string | `lib/checkers.nix`, bindings `tuple` and `union`; `(t.tuple [ t.int t.str ]).name` ⇒ `"tuple<int, string>"` (comma-space) vs `(t.union [ t.int t.str ]).name` ⇒ `"union<int,string>"` (bare comma) |
 | `defaultOnError` never returns — both of its branches throw | `lib/validate.nix:52-57`; `tryEval` on it ⇒ `success = false`. Test: `test-defaultOnError-throws` (`ci/tests/types-validate.nix`) |
 | Frugality — single-pass happy path, rescan only to locate a failure, lazy `__id` | `lib/checkers.nix`, bindings `firstError`, `firstFailing`, and `mkChecker`'s `__id` field; `lib/refined.nix`, binding `firstFailingRefinement`: read, NOT exercised in this run (no allocation or forcing instrument was applied) |
+
+<!-- gen-citations:end -->
 
 ## Theory
 
