@@ -22,21 +22,21 @@ is a self-contained **leaf** library so it can be imported *below* a registry li
 
 ## Gen Ecosystem
 
-| Library | Role |
-|---------|------|
-| [gen-prelude](https://github.com/sini/gen-prelude) | Pure nixpkgs-lib-free utility base (builtins re-exports + vendored lib utils) |
-| [gen-algebra](https://github.com/sini/gen-algebra) | Pure primitives (record, search monad, either, intensional identity) |
-| [gen-types](https://github.com/sini/gen-types) | **This lib** — Clean-room MIT structural type checker (leaf/poly checkers; `verify: v → null\|err`) |
-| [gen-merge](https://github.com/sini/gen-merge) | Byte-mode module merge engine (`evalModuleTree`, byte-identical to nixpkgs `lib.evalModules` over the priority subset) |
-| [gen-schema](https://github.com/sini/gen-schema) | Typed registries (kinds, instances, collections, refs); re-hosted on gen-merge |
-| [gen-aspects](https://github.com/sini/gen-aspects) | Aspect type system (traits, classification, dispatch); re-hosted on gen-merge |
-| [gen-scope](https://github.com/sini/gen-scope) | HOAG scope-graph evaluator (demand-driven, \_eval memoization, circular attributes) |
-| [gen-graph](https://github.com/sini/gen-graph) | Accessor-based graph query combinators (traversal, condensation, phaseOrder) |
-| [gen-select](https://github.com/sini/gen-select) | Selector algebra (pattern matching over graph positions) |
-| [gen-bind](https://github.com/sini/gen-bind) | Module binding (inject external args into NixOS modules) |
-| [gen-dispatch](https://github.com/sini/gen-dispatch) | Relational rule dispatch STEP (stratified phases, conflict resolution) |
-| [gen-memo](https://github.com/sini/gen-memo) | The incremental plane — decides reuse, never evaluates (change propagation, AFFECTED set) |
-| [gen-vars](https://github.com/sini/gen-vars) | Pure-Nix vars/secrets (den-agnostic) |
+| Library                                              | Role                                                                                                                   |
+| ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| [gen-prelude](https://github.com/sini/gen-prelude)   | Pure nixpkgs-lib-free utility base (builtins re-exports + vendored lib utils)                                          |
+| [gen-algebra](https://github.com/sini/gen-algebra)   | Pure primitives (record, search monad, either, intensional identity)                                                   |
+| [gen-types](https://github.com/sini/gen-types)       | **This lib** — Clean-room MIT structural type checker (leaf/poly checkers; `verify: v → null\|err`)                    |
+| [gen-merge](https://github.com/sini/gen-merge)       | Byte-mode module merge engine (`evalModuleTree`, byte-identical to nixpkgs `lib.evalModules` over the priority subset) |
+| [gen-schema](https://github.com/sini/gen-schema)     | Typed registries (kinds, instances, collections, refs); re-hosted on gen-merge                                         |
+| [gen-aspects](https://github.com/sini/gen-aspects)   | Aspect type system (traits, classification, dispatch); re-hosted on gen-merge                                          |
+| [gen-scope](https://github.com/sini/gen-scope)       | HOAG scope-graph evaluator (demand-driven, \_eval memoization, circular attributes)                                    |
+| [gen-graph](https://github.com/sini/gen-graph)       | Accessor-based graph query combinators (traversal, condensation, phaseOrder)                                           |
+| [gen-select](https://github.com/sini/gen-select)     | Selector algebra (pattern matching over graph positions)                                                               |
+| [gen-bind](https://github.com/sini/gen-bind)         | Module binding (inject external args into NixOS modules)                                                               |
+| [gen-dispatch](https://github.com/sini/gen-dispatch) | Relational rule dispatch STEP (stratified phases, conflict resolution)                                                 |
+| [gen-memo](https://github.com/sini/gen-memo)         | The incremental plane — decides reuse, never evaluates (change propagation, AFFECTED set)                              |
+| [gen-vars](https://github.com/sini/gen-vars)         | Pure-Nix vars/secrets (den-agnostic)                                                                                   |
 
 ## Install
 
@@ -181,11 +181,11 @@ them. The relation is Palmer's **conservative equality** (§2.3, §5.3 — his o
 "intensional" qualifies the *function*, never the equality), and it dispatches on the
 checker's identity REGIME rather than reading a single field:
 
-| regime | the checker carries | the relation |
-|--------|---------------------|--------------|
-| minted | `__mint.minted` | digest equality |
+| regime     | the checker carries   | the relation                                    |
+| ---------- | --------------------- | ----------------------------------------------- |
+| minted     | `__mint.minted`       | digest equality                                 |
 | unmintable | `__mint`, no `minted` | Nix `==` on the checker record **minus `__id`** |
-| unmigrated | no `__mint` | `name` equality |
+| unmigrated | no `__mint`           | `name` equality                                 |
 
 Every checker this library constructs is stamped, so the **unmigrated** arm now serves
 only a *foreign* record — one gen-types did not build. `__mint` is a tagged sum, and a
@@ -199,12 +199,12 @@ it plus that constructor's inert argument value. A name is a *rendering* of a ty
 rendering is lossy — which is not a theoretical worry but a measured collision in four
 constructor families at once, all four reading `true` before this landing:
 
-| construction | why the name lost it |
-|---|---|
-| `refined int positive` vs `refined int tcpPort` | both are named `refined<int>`; the predicates are not in the name |
-| `strict [ "a" ]` vs `strict [ "b" ]` | *every* strict type is named `"strict"` |
-| `enum "colour" [ "red" ]` vs `enum "colour" [ "blue" ]` | the name is the caller's, the members are not in it |
-| `struct "cfg" { a = int; }` vs `struct "cfg" { a = str; }` | likewise for members and the policy set |
+| construction                                               | why the name lost it                                              |
+| ---------------------------------------------------------- | ----------------------------------------------------------------- |
+| `refined int positive` vs `refined int tcpPort`            | both are named `refined<int>`; the predicates are not in the name |
+| `strict [ "a" ]` vs `strict [ "b" ]`                       | *every* strict type is named `"strict"`                           |
+| `enum "colour" [ "red" ]` vs `enum "colour" [ "blue" ]`    | the name is the caller's, the members are not in it               |
+| `struct "cfg" { a = int; }` vs `struct "cfg" { a = str; }` | likewise for members and the policy set                           |
 
 And it travelled: every combinator builds its name from its members' *names*, so one
 colliding member collided the whole tree above it — `listOf<cfg>` merged two different
@@ -215,12 +215,12 @@ composite is structural exactly as deep as its members are.
 total: it encodes every node of an inert value or refuses by name. So handing it the
 constructor's arguments *is* the classification, and the sealed cases fall out of it —
 
-| construction | regime | because |
-|---|---|---|
-| primitives, `option`/`listOf`/`attrsOf`/`union`/`intersection`/`tuple`/`optionalAttr`, `enum`, `strict`, `struct` | **minted** | every argument is inert, members entering as their own identities |
-| `struct(…).override { verify = …; }` | **unmintable** | the extra invariant is a caller-supplied lambda |
-| `refined base refs` | **unmintable** | a refinement's `check` is a caller-supplied lambda |
-| `typedef` / `typedef'` | **unmintable** | a caller-declared type is a caller-supplied lambda |
+| construction                                                                                                      | regime         | because                                                           |
+| ----------------------------------------------------------------------------------------------------------------- | -------------- | ----------------------------------------------------------------- |
+| primitives, `option`/`listOf`/`attrsOf`/`union`/`intersection`/`tuple`/`optionalAttr`, `enum`, `strict`, `struct` | **minted**     | every argument is inert, members entering as their own identities |
+| `struct(…).override { verify = …; }`                                                                              | **unmintable** | the extra invariant is a caller-supplied lambda                   |
+| `refined base refs`                                                                                               | **unmintable** | a refinement's `check` is a caller-supplied lambda                |
+| `typedef` / `typedef'`                                                                                            | **unmintable** | a caller-declared type is a caller-supplied lambda                |
 
 The limbs apply per **component**, which is why the same `struct` constructor mints
 without a caller `verify` and seals with one: a single sealed component does not drag its
