@@ -239,9 +239,9 @@ reified records, which separates them, and demanding `__id` refuses by name.
 **That comparison separates two IDENTICAL constructions too, not only different ones**, and
 the reach is wider than one checker. `check` is a bare lambda rebuilt on every call, so a
 `refined int positive` compares unequal to a second, separately built `refined int positive` — and because a composite over a sealed member is sealed as well, one `refined`
-field de-reflexivises the entire struct or list tree above it, at any depth. ADR-0034
-declares that precision an allocation artefact, so this is the sealed limb's price rather
-than a defect, and it errs in the safe direction: over MINTED members the same composites
+field de-reflexivises the entire struct or list tree above it, at any depth. That precision
+is an allocation artefact rather than a property of the values, so this is the sealed limb's
+price and not a defect, and it errs in the safe direction: over MINTED members the same composites
 still compare equal.
 
 The unmintable arm compares the record and never a component list: `check` is a bare
