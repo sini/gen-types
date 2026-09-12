@@ -1,5 +1,7 @@
 # gen-types — agent capability sheet
 
+> **Library class: reference-grade.** Deletion requires a domain argument — wrong abstraction, subsumption by another construct, or theory-unsoundness; a usage count is inadmissible as a deletion ground (P7, 2026-08-17).
+
 ## Scope
 
 Pure, `nixpkgs.lib`-free structural type CHECKER: every constructor returns a record whose `verify` maps a value to `null` (inhabits the type) or an error string (does not). No merging, no priorities, no fixpoint.
