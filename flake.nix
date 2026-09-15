@@ -25,7 +25,7 @@
       # by design (gen-scope's `buildNodes`), so a deep force is red on a healthy tree.
       lib =
         let
-          surface = import ./lib {
+          surface = import ./. {
             prelude = gen-prelude.lib;
             identity = gen-identity.lib;
           };

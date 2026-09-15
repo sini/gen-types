@@ -25,7 +25,7 @@ Quoted text is the owner's own `flake.nix` `description` field, verbatim.
 
 ## Exports
 
-Entry: `inputs.gen-types.lib` (flake, `flake.nix:16`). Root `default.nix` is a FUNCTION of a named dep — `import ./. { prelude = <gen-prelude.lib>; }` — with a default that fetches the flake-locked gen-prelude, so the plain-import path stays in lockstep with the flake output.
+Entry: `inputs.gen-types.lib` (flake, `flake.nix:16`). Root `default.nix` is a **function** — `import ./. { }` — whose named parameters (`prelude`, `identity`) default to the `ci/flake.lock` pins and may each be overridden. A third formal on that same root, `wire ? { deps, resolve }: import ./lib deps`, is the seam that hands this exact parameter set to `./lib` as `deps`, and the shim's only outward channel besides: a formal is an INPUT channel and cannot carry a value out, so the lock-parameterised `follows` resolver rides out on the same record. Overriding `wire` is how a cell reads the shim's own formal-to-path map AND its own resolver, with nothing fetched, no path restated and no fold transcribed — which is why the `follows` rule is declared exactly once in this repository, in `default.nix`.
 
 **Checker record** (the value every constructor returns; fields, not lib exports)
 
