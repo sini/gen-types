@@ -1,8 +1,9 @@
 # gen-types: checker identity — __name, __id, and conservative equality (typeEq /
 # conservativeEq), which dispatches on the checker's identity REGIME.
-{ genTypes, ... }:
+{ genTypes, lib, ... }:
 let
   t = genTypes;
+  ft = lib.types;
 
   # Fixtures for the two regimes a producer stamps. The producer has since landed and
   # every SHIPPED checker now carries a `__mint`, so these hand-built records are what
@@ -422,5 +423,49 @@ in
       minted = true;
       unmintable = true;
     };
+  };
+
+  # ── foreign (nixpkgs) type structural identity — 2026-09-17 spec, gate conditions 1 & 2 ──
+  #
+  # `lib.types.*` is nixpkgs' own combinator family: genuine `mkOptionType` records carrying no
+  # `__mint`, which is what makes `identityOf`'s `nestedTypes` branch live. RED before this
+  # landing (re-derived fresh against the unmodified `typeEq`, same session): both `differentElem`
+  # and the enum row below read `true`. GREEN is what these cells now pin.
+  flake.tests.types-identity.test-foreign-listOf-discriminates-structurally = {
+    expr = {
+      differentElem = t.typeEq (ft.listOf ft.str) (ft.listOf ft.int);
+      # POSITIVE CONTROL: the predicate discriminates in the corrected direction, not merely
+      # "always false" now — two separately-built listOf<str> still unify.
+      sameElemSeparateBuild = t.typeEq (ft.listOf ft.str) (ft.listOf ft.str);
+    };
+    expected = {
+      differentElem = false;
+      sameElemSeparateBuild = true;
+    };
+  };
+
+  # gen-native CONTROL, same run: the native path was never broken and stays unchanged.
+  flake.tests.types-identity.test-foreign-listOf-gen-native-control = {
+    expr = t.typeEq (t.listOf t.str) (t.listOf t.int);
+    expected = false;
+  };
+
+  # Gate condition 2's shipped row: a BROKEN-family member (empty `nestedTypes`, distinguishing
+  # content outside `.name`/`.nestedTypes`) as a refusal/discrimination control. Two
+  # differently-valued enums must not mint identically — discriminate or refuse by name, either is
+  # acceptable; silently minting the same identity is the defect this row exists to catch.
+  flake.tests.types-identity.test-foreign-enum-does-not-silently-unify = {
+    expr = t.typeEq (ft.enum [ "a" ]) (ft.enum [ "b" ]);
+    expected = false;
+  };
+
+  # `path` is gate-suggested as a registry member and measured UNSAFE: `pathWith`'s three callers
+  # (`path`, `pathInStore`, `externalPath`) all share the hardcoded name `"path"` while differing
+  # in accept/reject behaviour, so registering it would reproduce this spec's own target defect
+  # one layer down. This pins the exclusion so a later "helpful" registry addition cannot regress
+  # it silently.
+  flake.tests.types-identity.test-foreign-path-family-not-falsely-unified = {
+    expr = t.typeEq ft.path ft.pathInStore;
+    expected = false;
   };
 }

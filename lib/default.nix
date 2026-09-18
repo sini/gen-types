@@ -18,11 +18,93 @@
 # pure utility surface. No nixpkgs.lib anywhere under lib/ (purity invariant).
 { prelude, identity }:
 let
+  inherit (prelude)
+    attrValues
+    elem
+    any
+    map
+    ;
   core = import ./checkers.nix { inherit prelude identity; };
   inherit (core) checkers mkChecker idOf;
   refinedLib = import ./refined.nix { inherit prelude; };
   validateLib = import ./validate.nix { inherit prelude; };
   strictLib = import ./strict.nix { inherit prelude; };
+
+  # ── foreign (nixpkgs) type structural identity ──
+  #
+  # An imported `lib.types.*` value carries no `__mint` at all — it is a nixpkgs `mkOptionType`
+  # record, not one of this library's own checkers — so `identityOf` below cannot dispatch on
+  # `__mint`'s tag for it. Where it carries nixpkgs' own recursive structural field `nestedTypes`
+  # (`{}` at a leaf, `{elemType=...}` for `listOf`/`attrsOf`/`nullOr`, `{left;right;}` for `either`,
+  # and so on for the rest of the combinator family — `nestedTypes ? {}` is `mkOptionType`'s own
+  # default, so every genuine import carries it), route it through this recursive mint instead of a
+  # name-only fallback (ADR-0034: "a name-only comparison is rejected anywhere it mints or keys").
+  #
+  # Mirrors `idOf`/`mkChecker` above: a child enters the parent's preimage as ITS OWN IDENTITY,
+  # never as the raw child record — a composite is structural exactly as deep as its members are,
+  # and the walk never touches `.check`/`.merge`/`.functor.type` (nixpkgs' one self-referential
+  # field) at any depth — only `.name` and `.nestedTypes`.
+  #
+  # ★ LEAF CLASSIFICATION IS BY REGISTRY, NOT BY "EMPTY `nestedTypes`" ALONE (gate finding,
+  # `den-hoag-2e3cc`). Driven over twelve nixpkgs combinator families: five reach empty
+  # `nestedTypes` while their distinguishing content lives in a `check`/`merge` closure this walk
+  # never inspects — `enum`, `addCheck`'s result, `ints.between`, `submodule`, `separatedString` —
+  # and an unconditional "empty ⇒ leaf, mint by name" rule mints two genuinely distinct instances of
+  # each identically. The registry below is the finite set of nixpkgs' own leaf names measured
+  # genuinely first-order at the pinned rev; `path` is gate-suggested and EXCLUDED on measurement —
+  # `pathWith`'s three callers (`path`, `pathInStore`, `externalPath`) all produce the identical
+  # hardcoded `.name == "path"` while differing in accept/reject behaviour, so registering it would
+  # reproduce this construction's own target defect one layer down (spec §2).
+  #
+  # A name outside the registry, or a composite with a sealed member anywhere in it, takes
+  # ADR-0034's sealed-limb treatment: no identity minted, tagged `unmintable` so `identityOf` routes
+  # it to `conservativeEq`'s existing full-record comparison — the same decision that regime already
+  # carries, with no new dispatch branch needed.
+  foreignLeafRegistry = [
+    "str"
+    "int"
+    "bool"
+    "float"
+    "anything"
+    "raw"
+    "unspecified"
+    "attrs"
+    "package"
+  ];
+
+  mintForeign =
+    t:
+    let
+      children = attrValues (t.nestedTypes or { });
+      mintedChildren = map mintForeign children;
+    in
+    if children == [ ] then
+      if elem t.name foreignLeafRegistry then
+        {
+          minted = identity.hashIdentity "type" [ "name" "children" ] (
+            l:
+            {
+              name = t.name;
+              children = [ ];
+            }
+            .${l}
+          );
+        }
+      else
+        { sealed = t.name; }
+    else if any (m: m ? sealed) mintedChildren then
+      { sealed = t.name; }
+    else
+      {
+        minted = identity.hashIdentity "type" [ "name" "children" ] (
+          l:
+          {
+            name = t.name;
+            children = map (m: m.minted) mintedChildren;
+          }
+          .${l}
+        );
+      };
 
   # The ONE access discipline over the three identity regimes, and it is TOTAL OVER
   # THOSE THREE REGIMES — not over the two populations of the migration window, which
@@ -48,6 +130,15 @@ let
       { inherit (v.__mint) minted; }
     else if v ? __mint then
       { inherit (v.__mint) unmintable; }
+    else if v ? nestedTypes then
+      # A genuine nixpkgs import (§ "foreign (nixpkgs) type structural identity" above): structural
+      # identity through the recursive mint, never name alone. A record that merely lacks `__mint`
+      # AND `nestedTypes` (the pre-migration population this arm still covers) falls through to the
+      # unchanged name-only branch below.
+      let
+        m = mintForeign v;
+      in
+      if m ? minted then { inherit (m) minted; } else { unmintable = m.sealed; }
     else
       { unmigrated = v.name; };
 
