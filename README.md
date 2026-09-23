@@ -332,8 +332,9 @@ t.typeEq (t.refined t.int r.positive)
 
 **A self-referential or over-deep type has no identity, and says so catchably.** A member
 enters its composite's preimage as a fixed-width identity, which takes type nesting off the
-encoder's depth bound, so type nesting gets its own: 128 levels (ADR-0034, "every
-self-referential value … The budget's refusal point is CHOSEN"). Each composite carries
+encoder's depth bound, so type nesting gets its own: 128 levels. A self-referential type is
+given no identity at all, and 128 is a chosen refusal point, not a limit inherited from the
+evaluator. Each composite carries
 `__okAt`, a step-indexed guard whose cell at index k holds when every member's cell at k − 1
 does. Reads strictly descend, so a cycle bottoms out at index 0 instead of re-entering its own
 mint, and the cells are memoised per node, so the cost is linear in the type graph and never in
