@@ -45,6 +45,8 @@ let
     removeAttrs
     seq
     split
+    stringLength
+    substring
     tryEval
     typeOf
     ;
@@ -62,12 +64,25 @@ let
 
   # ── error rendering (only ever forced on the failure path) ──
 
-  # Minimal value pretty-printer. Never invoked on a successful verify, so its
-  # cost does not touch the happy path. Pure builtins — no lib.generators.
+  # A SHALLOW, TOTAL value renderer: it reads the value it is handed, which every door has
+  # already forced to WHNF, and NEVER a member of it. A container shows its attribute names or
+  # its length, which the evaluator answers without forcing a member thunk; a member's value is
+  # `…`. So nothing a member raises when forced (a throw, an evaluator error, a cycle, a depth)
+  # can reach it, and no refusal rendered through it aborts or is replaced. There is no
+  # derivation arm: recognising a derivation reads `type`, which is a member.
+  #
+  # ★ `renderBudget` bounds the rendered value in bytes: a string or path is cut at it, and a
+  # set's `name = …;` entries fill it in `attrNames` order and count the rest. Ceiling:
+  # renderBudget + 34 bytes, for every value except a top-level float, whose `toString` is
+  # bounded by its representation and not by the budget (1.5e300 renders 308 B). The bound is
+  # on THIS value slot only: struct's closed-world refusal and `strict` list unknown key names
+  # through `joinKeys`, which this renderer does not reach.
+  renderBudget = 256;
+  cut = s: if stringLength s > renderBudget then "${substring 0 renderBudget s}…" else s;
   toPretty =
     v:
     if isString v then
-      ''"${v}"''
+      ''"${cut v}"''
     else if isInt v || isFloat v then
       toString v
     else if isBool v then
@@ -75,15 +90,29 @@ let
     else if isNull v then
       "null"
     else if isPath v then
-      toString v
+      cut (toString v)
     else if isFunction v then
       "«lambda»"
-    else if isDerivation v then
-      "«derivation ${v.name or "?"}»"
     else if isList v then
-      "[ ${concatStringsSep " " (map toPretty v)} ]"
+      let
+        n = length v;
+      in
+      if n == 0 then "[  ]" else "[ … (${toString n} element${if n == 1 then "" else "s"}) ]"
     else if isAttrs v then
-      "{ ${concatStringsSep " " (map (n: "${n} = ${toPretty v.${n}};") (attrNames v))} }"
+      let
+        names = attrNames v;
+        n = length names;
+        fill =
+          i: used:
+          let
+            e = "${elemAt names i} = …;";
+            u = used + stringLength e + 1;
+          in
+          if i == n || u > renderBudget then [ ] else [ e ] ++ fill (i + 1) u;
+        shown = fill 0 0;
+        rest = n - length shown;
+      in
+      "{ ${concatStringsSep " " (shown ++ optional (rest > 0) "… (${toString rest} more)")} }"
     else
       typeOf v;
 
@@ -245,7 +274,37 @@ let
   # still real and still reachable — the control in the same run is a 600-deep list handed to `enum`
   # as a MEMBER, which is caller data, takes the full walk, and refuses.
   idOf =
-    t: t.__mint.minted or (throw "identity: component type '${t.name}' has no mintable identity");
+    t:
+    t.__mint.minted
+      or (throw "identity: component type '${memberName "identity" t}' has no mintable identity");
+
+  # ★ A NAME THAT IS NOT A STRING REFUSES BY NAME WHERE IT IS READ. Every combinator interpolates
+  # its members' `name` into its own, and four constructors (`typedef`, `typedef'`, `enum`,
+  # `struct`) interpolate a caller's; interpolating a non-string aborts uncatchably. A member's
+  # name is read lazily, because forcing it at formation diverges on a self-referential type; a
+  # caller's is forced when the constructor is applied, so the bad type never forms.
+  memberName =
+    ctor: t:
+    let
+      n = if isAttrs t then t.name or null else null;
+    in
+    if isString n then
+      n
+    else
+      throw "gen-types: ${ctor}: a member's `name` must be a string, but it is ${
+        if n != null then
+          "of type '${typeOf n}'"
+        else if isAttrs t then
+          "absent"
+        else
+          "absent (the member is of type '${typeOf t}')"
+      }";
+  callerName =
+    ctor: name:
+    if isString name then
+      name
+    else
+      throw "gen-types: ${ctor}: the type's name must be a string, but it is of type '${typeOf name}'";
 
   # A combinator's members, read as VERIFIERS. A member that is not a checker (no `verify`: a
   # merge strategy, which carries `admits` instead, or a non-attrset) refuses the combinator BY
@@ -266,7 +325,14 @@ let
     ctor: ts:
     let
       bad = filter (t: !(isAttrs t && t ? verify)) ts;
-      nm = t: if isAttrs t then t.name or "<unnamed>" else "<a ${typeOf t}>";
+      nm =
+        t:
+        if !(isAttrs t) then
+          "<a ${typeOf t}>"
+        else if isString (t.name or null) then
+          t.name
+        else
+          "<unnamed>";
     in
     if bad == [ ] then
       map (t: t.verify) ts
@@ -297,15 +363,25 @@ let
     # ecosystem's first case of. Until then `typeEq` DECIDES about such a type by comparing the
     # reified record, which is finer than the name relation and never coarser.
     typedef' =
-      name: verify:
-      mkChecker "typedef"
-        (throw "identity: type '${name}' is declared from a caller-supplied verifier, which is a lambda and has no total preimage")
-        name
-        verify;
+      name0: verify:
+      let
+        name = callerName "typedef" name0;
+      in
+      seq name (
+        mkChecker "typedef"
+          (throw "identity: type '${name}' is declared from a caller-supplied verifier, which is a lambda and has no total preimage")
+          name
+          verify
+      );
 
     # Declare a type from a bool predicate; the standard type-mismatch message is
     # synthesized on failure. Sealed for the same reason as `typedef'`.
-    typedef = name: pred: checkers.typedef' name (v: if pred v then null else typeError name v);
+    typedef =
+      name0: pred:
+      let
+        name = callerName "typedef" name0;
+      in
+      checkers.typedef' name (v: if pred v then null else typeError name v);
 
     # ── primitives (builtins.is* wrappers) ──
     # These take `prim` rather than the public `typedef`: their predicates are this library's, so
@@ -332,7 +408,7 @@ let
     option =
       t:
       let
-        name = "option<${t.name}>";
+        name = "option<${memberName "option" t}>";
         f = head (verifiersOf "option" [ t ]);
       in
       mkChecker "option" (idOf t) name (
@@ -343,7 +419,7 @@ let
     listOf =
       t:
       let
-        name = "listOf<${t.name}>";
+        name = "listOf<${memberName "listOf" t}>";
         f = head (verifiersOf "listOf" [ t ]);
       in
       mkChecker "listOf" (idOf t) name (
@@ -354,7 +430,7 @@ let
     attrsOf =
       t:
       let
-        name = "attrsOf<${t.name}>";
+        name = "attrsOf<${memberName "attrsOf" t}>";
         f = head (verifiersOf "attrsOf" [ t ]);
       in
       mkChecker "attrsOf" (idOf t) name (
@@ -367,11 +443,17 @@ let
     # union<a,b,…>: a value satisfying at least one member (short-circuits).
     # Members enter the preimage IN ORDER: `union [ a b ]` and `union [ b a ]` accept the same
     # values but report a different name on failure, and finer is the safe direction here.
+    #
+    # ★ union DECIDES BY `f v == null`, so it builds each refusing member's message on its way to
+    # the member that accepts. With the shallow `toPretty` that message cannot abort on the value.
+    # The known limit, and it is LOUD: a failing member whose message ITSELF throws (a caller's
+    # `refined` message, a `typedef'` verifier) raises that error from union's verify, which can
+    # refuse a value a later member accepts. It never answers a false `null`.
     union =
       types:
       assert isList types;
       let
-        name = "union<${concatStringsSep "," (map (t: t.name) types)}>";
+        name = "union<${concatStringsSep "," (map (memberName "union") types)}>";
         funcs = verifiersOf "union" types;
       in
       mkChecker "union" (map idOf types) name (
@@ -383,7 +465,7 @@ let
       types:
       assert isList types;
       let
-        name = "intersection<${concatStringsSep "," (map (t: t.name) types)}>";
+        name = "intersection<${concatStringsSep "," (map (memberName "intersection") types)}>";
         funcs = verifiersOf "intersection" types;
       in
       mkChecker "intersection" (map idOf types) name (
@@ -405,10 +487,15 @@ let
     # `[ "b" "a" ]` under Nix `==`, so sorting or deduplicating would move the `==`-biconditional off
     # the argument value and would owe an argument of its own.
     enum =
-      name: elems:
+      name0: elems:
       assert isList elems;
-      mkChecker "enum" { inherit name elems; } name (
-        v: if elem v elems then null else "${toPretty v} is not a member of enum '${name}'"
+      let
+        name = callerName "enum" name0;
+      in
+      seq name (
+        mkChecker "enum" { inherit name elems; } name (
+          v: if elem v elems then null else "${toPretty v} is not a member of enum '${name}'"
+        )
       );
 
     # tuple<a,b,…>: a list of exactly the members, positionally typed.
@@ -416,7 +503,7 @@ let
       members:
       assert isList members;
       let
-        name = "tuple<${concatStringsSep ", " (map (t: t.name) members)}>";
+        name = "tuple<${concatStringsSep ", " (map (memberName "tuple") members)}>";
         len = length members;
         funcs = verifiersOf "tuple" members;
         walk =
@@ -445,7 +532,7 @@ let
     optionalAttr =
       t:
       let
-        name = "optionalAttr<${t.name}>";
+        name = "optionalAttr<${memberName "optionalAttr" t}>";
         f = head (verifiersOf "optionalAttr" [ t ]);
       in
       mkChecker "optionalAttr" (idOf t) name (v: seq f (addContext "in ${name}" (f v)));
@@ -466,9 +553,10 @@ let
     # allocate is the `removeAttrs` for the unknown-key check, and that is built
     # solely when unknown = false — the default happy path allocates nothing.
     struct =
-      name: members:
+      name0: members:
       assert isAttrs members;
       let
+        name = callerName "struct" name0;
         memberNames = attrNames members;
         ctx = "in struct '${name}'";
         # forced on entry to `verify`, before any member's `__name` or `verify` is read
@@ -534,7 +622,7 @@ let
             override = delta: build ({ inherit total unknown verify; } // delta);
           };
       in
-      build { };
+      seq name (build { });
   });
 in
 # The checker set is the library's public surface; `mkChecker` and `idOf` are the identity core

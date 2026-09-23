@@ -71,7 +71,13 @@ in
     base: refinements:
     let
       refs = normalize refinements;
-      name = "refined<${base.name}>";
+      # a non-string base name refuses by name where it is read, as `memberName` does in checkers.nix
+      baseName =
+        if builtins.isString (base.name or null) then
+          base.name
+        else
+          throw "gen-types: refined: the base's `name` must be a string";
+      name = "refined<${baseName}>";
       baseVerify = builtins.head (verifiersOf "refined" [ base ]);
     in
     mkChecker "refined"

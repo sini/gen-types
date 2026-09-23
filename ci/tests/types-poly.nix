@@ -100,7 +100,7 @@ in
   };
   flake.tests.types-poly.test-attrsOf-not-attrs = {
     expr = (t.attrsOf t.int).verify [ 1 ];
-    expected = "expected type 'attrsOf<int>' but value [ 1 ] is of type 'list'";
+    expected = "expected type 'attrsOf<int>' but value [ … (1 element) ] is of type 'list'";
   };
 
   # ── union ──
@@ -204,7 +204,7 @@ in
         t.str
       ]).verify
         [ 1 ];
-    expected = "expected tuple of length 2 but value [ 1 ] has length 1";
+    expected = "expected tuple of length 2 but value [ … (1 element) ] has length 1";
   };
   flake.tests.types-poly.test-tuple-not-a-list = {
     expr =

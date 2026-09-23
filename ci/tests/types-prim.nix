@@ -78,7 +78,7 @@ in
   };
   flake.tests.types-prim.test-attrs-fail = {
     expr = t.attrs.verify [ 1 ];
-    expected = "expected type 'attrs' but value [ 1 ] is of type 'list'";
+    expected = "expected type 'attrs' but value [ … (1 element) ] is of type 'list'";
   };
   flake.tests.types-prim.test-list-ok = {
     expr = t.list.verify [
@@ -101,7 +101,7 @@ in
   };
   flake.tests.types-prim.test-derivation-fail-on-attrs = {
     expr = t.derivation.verify { type = "not-drv"; };
-    expected = "expected type 'derivation' but value { type = \"not-drv\"; } is of type 'set'";
+    expected = "expected type 'derivation' but value { type = …; } is of type 'set'";
   };
   flake.tests.types-prim.test-derivation-ok-on-fake-drv = {
     expr = t.derivation.verify {

@@ -125,6 +125,30 @@ Errors thread context through nesting:
 #     expected type 'int' but value \"x\" is of type 'string'"
 ```
 
+A refusal renders the offending value **shallowly**: it reads the value and never a member of
+it, so a member that throws, errors, cycles or nests cannot abort or replace the refusal. A list
+shows its length, a set its attribute names, and a member's value is `…`:
+
+```nix
+t.int.verify [ 1 2 ]         # => "expected type 'int' but value [ … (2 elements) ] is of type 'list'"
+t.int.verify { a = 1 + "a"; } # => "expected type 'int' but value { a = …; } is of type 'set'"
+```
+
+The rendered value is bounded by a 256-byte budget: a string or path is cut with a trailing
+`…`, and a set's names fill the budget and count the rest as `… (N more)`. It stays within
+290 bytes, except a top-level float, whose `toString` is bounded by its representation
+(`1.5e300` renders 308 B). The bound covers this value slot only: `struct`'s closed-world
+refusal and `strict` list unknown key names in full.
+
+A type's `name` must be a string. A combinator given a member with a non-string name
+refuses by name where it first reads that name; `typedef`, `typedef'`, `enum` and `struct`
+refuse a non-string name when applied.
+
+`union` accepts a value when some member's `verify` answers `null`, so it builds each
+refusing member's message on the way. Its known limit is loud, never silent: a failing
+member whose message itself throws raises that error from `union`'s `verify`, and so can
+refuse a value a later member accepts.
+
 ### struct
 
 ```nix
@@ -310,13 +334,13 @@ $ cd ci && nix flake check          # or: nix-unit --flake .#tests
 $ cd ci && nix-unit --flake .#testsError
 ```
 
-156 nix-unit assertions across primitives, polymorphic combinators, structs, refined,
-validators, strict, identity, the `check` contract, and the purity invariant — every
+171 nix-unit assertions across primitives, polymorphic combinators, structs, refined,
+validators, strict, identity, the `check` contract, refusal rendering, and the purity invariant — every
 checker with success (`null`) and failure (exact error string) cases, plus nested and
 recursive types. The purity test walks `lib/` and fails CI on any `nixpkgs.lib`/
 module-system token; it proves it has teeth against an injected violation.
 
-Cells that assert an error's MESSAGE live in `ci/tests-error.nix`, on the `testsError`
+Cells that assert an error's MESSAGE live in `ci/tests-error*.nix`, on the `testsError`
 output: `nix flake check` forces every `tests` cell unconditionally, so a cell that throws
 on purpose would crash it rather than pass.
 
