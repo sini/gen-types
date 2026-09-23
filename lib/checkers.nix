@@ -6,12 +6,14 @@
 # blames the value on mismatch — restricted to a first-order, allocation-frugal
 # core so it stays a single eval pass on the happy path.
 #
-# Every checker is a record { name; verify; check; __name; __mint; __id; }:
-#   name    — full structural name, e.g. "listOf<int>"
+# Every checker is a record { name; verify; check; __name; __nameWithin; __mint; __id; }:
+#   name    — full structural name, e.g. "listOf<int>", within `renderBudget` bytes
 #   verify  — value -> null | errString   (null = ok)
 #   check   — v: v2: throws verify's error on failure, returns v2 on success
 #   __name  — base name with polymorphic metadata stripped ("listOf")
-#   __mint  — the identity REGIME as a tagged sum, minted over the CONSTRUCTION rather
+#   __nameWithin — budget -> the name rendered within that many bytes; what a combinator
+#             reads of a member instead of its `name` (see `renderNode`)
+#   __mint — the identity REGIME as a tagged sum, minted over the CONSTRUCTION rather
 #             than over the name: { minted = "type:<digest>"; } where the constructor's
 #             arguments are inert, { unmintable = { ctor; reason; }; } where one of them
 #             is a caller-supplied lambda. This is what the equality relation reads.
@@ -78,6 +80,64 @@ let
   # on THIS value slot only: struct's closed-world refusal and `strict` list unknown key names
   # through `joinKeys`, which this renderer does not reach.
   renderBudget = 256;
+  # ★ A COMPOSITE NAME IS RENDERED WITHIN A BYTE BUDGET HANDED DOWN IN PREORDER, because Nix `let`
+  # is recursive and a type can hold itself (`let r = union [ int (listOf r) ]; in r`). Its name
+  # then denotes a regular infinite tree, and a name built by interpolating the members' `name`
+  # thunks needs its own value: an uncatchable black hole on every refusal, so the type could
+  # accept but never refuse. Here a combinator's name is `renderNode` applied to `nameBudget`, and
+  # a member is rendered through its own renderer (`__nameWithin`) and never through its `name`.
+  #
+  # ★ TERMINATION: every member call is handed at most `inner = b - |open| - |close|`, and every
+  # combinator's `open` is non-empty, so the budget is a natural number that strictly decreases at
+  # each call. That holds for every name a gen-types combinator produces. A hand-built member that
+  # builds its OWN name from the cycle (`{ name = "wrap<${r.name}>"; … }`) is a diverging name
+  # producer outside this library, and it diverges here as it did before.
+  #
+  # ★ THE CEILING: a renderer handed b returns at most max(b, |…|) bytes. A node reserves its
+  # brackets, and before a member with siblings after it, a separator and a `…`; once the budget is
+  # spent the remaining members collapse into one `…`. The name is lossy past the budget, which
+  # ADR-0034 admits: the derived name answers shape guards and is never hashed and never a key.
+  #
+  # ★ WHAT STAYS BYTE-IDENTICAL: a member is rendered whole whenever its full name fits the room it
+  # is handed, and each nesting level spends at most the 3 B of that reservation, so a name of at
+  # most 256 - 3d bytes (d its combinator nesting depth; 253 B when flat) renders exactly as the
+  # unbounded interpolation did. Past that a fitting name can elide where a trailing member is
+  # shorter than `…`: `union [ enum <247 B> (enum "e") ]` is `union<…,e>`. A member's name is read
+  # from its construction-time renderer, so a record renamed by `//` keeps its old name as a
+  # member, as its `__name` and `__mint` already do.
+  nameBudget = renderBudget;
+  ell = "…";
+  leafWithin = n: b: if stringLength n <= b then n else ell;
+  withinOf =
+    ctor: t: b:
+    if isAttrs t && isFunction (t.__nameWithin or null) then
+      t.__nameWithin b
+    else
+      leafWithin (memberName ctor t) b;
+  renderNode =
+    ctor: open: sep: close: members: b:
+    let
+      inner = b - stringLength open - stringLength close;
+      go =
+        ms: left:
+        if ms == [ ] then
+          [ ]
+        else
+          let
+            more = builtins.tail ms != [ ];
+            room = left - (if more then stringLength sep + stringLength ell else 0);
+            s = withinOf ctor (head ms) room;
+          in
+          # elide only a member that does not fit: one shorter than `…` fits a room smaller than it
+          if stringLength s > room then
+            [ ell ]
+          else
+            [ s ] ++ go (builtins.tail ms) (left - stringLength s - (if more then stringLength sep else 0));
+    in
+    if inner < stringLength ell then
+      ell
+    else
+      "${open}${concatStringsSep sep (go members inner)}${close}";
   cut = s: if stringLength s > renderBudget then "${substring 0 renderBudget s}…" else s;
   toPretty =
     v:
@@ -203,8 +263,11 @@ let
   # date. `tryEval` contains it because every refusal in the mint is a `throw` rather than a
   # builtin's own abort — which is the property gen-identity's encoder was built to have.
   mkChecker =
-    ctor: args: name: verify:
+    ctor: args: name0: verify:
     let
+      # a combinator hands a RENDERER (budget -> string), a leaf or a nominal type its name
+      name = if isFunction name0 then name0 nameBudget else name0;
+      within = if isFunction name0 then name0 else leafWithin name0;
       mint =
         identity.hashIdentity "type"
           [
@@ -222,6 +285,7 @@ let
     in
     {
       inherit name verify;
+      __nameWithin = within;
       check =
         v: v2:
         let
@@ -278,8 +342,8 @@ let
     t.__mint.minted
       or (throw "identity: component type '${memberName "identity" t}' has no mintable identity");
 
-  # ★ A NAME THAT IS NOT A STRING REFUSES BY NAME WHERE IT IS READ. Every combinator interpolates
-  # its members' `name` into its own, and four constructors (`typedef`, `typedef'`, `enum`,
+  # ★ A NAME THAT IS NOT A STRING REFUSES BY NAME WHERE IT IS READ. Every combinator renders a
+  # member that carries no `__nameWithin` from its `name`, and four constructors (`typedef`, `typedef'`, `enum`,
   # `struct`) interpolate a caller's; interpolating a non-string aborts uncatchably. A member's
   # name is read lazily, because forcing it at formation diverges on a self-referential type; a
   # caller's is forced when the constructor is applied, so the bad type never forms.
@@ -408,10 +472,11 @@ let
     option =
       t:
       let
-        name = "option<${memberName "option" t}>";
+        render = renderNode "option" "option<" "" ">" [ t ];
+        name = render nameBudget;
         f = head (verifiersOf "option" [ t ]);
       in
-      mkChecker "option" (idOf t) name (
+      mkChecker "option" (idOf t) render (
         v: seq f (if v == null then null else addContext "in ${name}" (f v))
       );
 
@@ -419,10 +484,11 @@ let
     listOf =
       t:
       let
-        name = "listOf<${memberName "listOf" t}>";
+        render = renderNode "listOf" "listOf<" "" ">" [ t ];
+        name = render nameBudget;
         f = head (verifiersOf "listOf" [ t ]);
       in
-      mkChecker "listOf" (idOf t) name (
+      mkChecker "listOf" (idOf t) render (
         v: seq f (if !isList v then typeError name v else addContext "in ${name} element" (firstError f v))
       );
 
@@ -430,10 +496,11 @@ let
     attrsOf =
       t:
       let
-        name = "attrsOf<${memberName "attrsOf" t}>";
+        render = renderNode "attrsOf" "attrsOf<" "" ">" [ t ];
+        name = render nameBudget;
         f = head (verifiersOf "attrsOf" [ t ]);
       in
-      mkChecker "attrsOf" (idOf t) name (
+      mkChecker "attrsOf" (idOf t) render (
         v:
         seq f (
           if !isAttrs v then typeError name v else addContext "in ${name} value" (firstError f (attrValues v))
@@ -453,10 +520,11 @@ let
       types:
       assert isList types;
       let
-        name = "union<${concatStringsSep "," (map (memberName "union") types)}>";
+        render = renderNode "union" "union<" "," ">" types;
+        name = render nameBudget;
         funcs = verifiersOf "union" types;
       in
-      mkChecker "union" (map idOf types) name (
+      mkChecker "union" (map idOf types) render (
         v: seq funcs (if any (f: f v == null) funcs then null else typeError name v)
       );
 
@@ -465,10 +533,11 @@ let
       types:
       assert isList types;
       let
-        name = "intersection<${concatStringsSep "," (map (memberName "intersection") types)}>";
+        render = renderNode "intersection" "intersection<" "," ">" types;
+        name = render nameBudget;
         funcs = verifiersOf "intersection" types;
       in
-      mkChecker "intersection" (map idOf types) name (
+      mkChecker "intersection" (map idOf types) render (
         v: seq funcs (addContext "in ${name}" (firstFailing funcs v))
       );
 
@@ -503,7 +572,8 @@ let
       members:
       assert isList members;
       let
-        name = "tuple<${concatStringsSep ", " (map (memberName "tuple") members)}>";
+        render = renderNode "tuple" "tuple<" ", " ">" members;
+        name = render nameBudget;
         len = length members;
         funcs = verifiersOf "tuple" members;
         walk =
@@ -516,7 +586,7 @@ let
             in
             if e != null then "in element ${toString i}: ${e}" else walk v (i + 1);
       in
-      mkChecker "tuple" (map idOf members) name (
+      mkChecker "tuple" (map idOf members) render (
         v:
         seq funcs (
           if !isList v then
@@ -532,10 +602,11 @@ let
     optionalAttr =
       t:
       let
-        name = "optionalAttr<${memberName "optionalAttr" t}>";
+        render = renderNode "optionalAttr" "optionalAttr<" "" ">" [ t ];
+        name = render nameBudget;
         f = head (verifiersOf "optionalAttr" [ t ]);
       in
-      mkChecker "optionalAttr" (idOf t) name (v: seq f (addContext "in ${name}" (f v)));
+      mkChecker "optionalAttr" (idOf t) render (v: seq f (addContext "in ${name}" (f v)));
 
     # struct<name>{ members }: a record. A freshly constructed struct starts from
     # the policy set total = true, unknown = true, verify = null.
@@ -633,5 +704,10 @@ in
 # publishing the door before the vocabulary is picked would decide it by accretion.
 {
   checkers = self;
-  inherit mkChecker idOf verifiersOf;
+  inherit
+    mkChecker
+    idOf
+    verifiersOf
+    renderNode
+    ;
 }

@@ -7,7 +7,7 @@
 # notion whatsoever; the type value is a pure predicate boundary.
 #
 # The handoff contract is the checker record itself — { name; verify; check; __name;
-# __mint; __id } — so gen-merge calls `t.verify` on a merged leaf value (null = ok, else
+# __nameWithin; __mint; __id } — so gen-merge calls `t.verify` on a merged leaf value (null = ok, else
 # a blame string) and `t.typeEq` to decide whether two option declarations carry the same
 # type. `typeEq` and not `__id`: deciding is not demanding, and a checker whose content is
 # sealed has an identity to REFUSE but a record to compare.
@@ -30,6 +30,7 @@ let
     mkChecker
     idOf
     verifiersOf
+    renderNode
     ;
   refinedLib = import ./refined.nix { inherit prelude; };
   validateLib = import ./validate.nix { inherit prelude; };
@@ -211,7 +212,14 @@ in
 checkers
 // {
   # refinement contracts
-  refined = refinedLib.refined { inherit mkChecker idOf verifiersOf; };
+  refined = refinedLib.refined {
+    inherit
+      mkChecker
+      idOf
+      verifiersOf
+      renderNode
+      ;
+  };
   inherit (refinedLib) refinements;
 
   # closed-world unknown-key rejection

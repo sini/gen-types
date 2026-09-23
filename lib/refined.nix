@@ -37,7 +37,7 @@ let
 in
 {
   # refined : baseChecker -> (refinement | [refinement]) -> checker
-  # Takes the identity core (name/verify/check/__name/__id/__mint).
+  # Takes the identity core (name/verify/check/__name/__nameWithin/__id/__mint).
   #
   # ★★ A REFINED TYPE'S DISTINGUISHING CONTENT IS `base ⊕ predicate`, AND THE NAME CARRIES ONLY THE
   # BASE. `refined<int>` says nothing about which predicates a value must satisfy, so two different
@@ -67,17 +67,14 @@ in
       mkChecker,
       idOf,
       verifiersOf,
+      renderNode,
     }:
     base: refinements:
     let
       refs = normalize refinements;
-      # a non-string base name refuses by name where it is read, as `memberName` does in checkers.nix
-      baseName =
-        if builtins.isString (base.name or null) then
-          base.name
-        else
-          throw "gen-types: refined: the base's `name` must be a string";
-      name = "refined<${baseName}>";
+      # the base renders as a member does, within the budget and by its own renderer where it has
+      # one, so a base with none is bounded too and a non-string base name refuses by name
+      render = renderNode "refined" "refined<" "" ">" [ base ];
       baseVerify = builtins.head (verifiersOf "refined" [ base ]);
     in
     mkChecker "refined"
@@ -85,7 +82,7 @@ in
         base = idOf base;
         refinements = refs;
       }
-      name
+      render
       (
         v:
         let

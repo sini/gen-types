@@ -20,7 +20,7 @@ let
 in
 {
   # strict : [str] -> checker
-  # Takes the identity core's `mkChecker` (name/verify/check/__name/__id/__mint).
+  # Takes the identity core's `mkChecker` (name/verify/check/__name/__nameWithin/__id/__mint).
   #
   # ★ EVERY STRICT TYPE IS NAMED "strict", so the name distinguishes NONE of them — `strict [ "a" ]`
   # and `strict [ "b" ]` compared EQUAL under a name-only identity, measured. The declared key set

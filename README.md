@@ -63,10 +63,11 @@ Every constructor returns a record:
 
 ```nix
 {
-  name;    # full structural name, e.g. "listOf<int>"
+  name;    # full structural name, e.g. "listOf<int>", within 256 bytes (see below)
   verify;  # value -> null | errString      (null = ok)
   check;   # v: v2: throws verify's error on failure, else returns v2
   __name;  # base name with polymorphic metadata stripped ("listOf")
+  __nameWithin;  # budget -> the name within that many bytes; a combinator reads a member through it
   __mint;  # tagged identity regime: { minted = "type:<sha256>"; } | { unmintable = { ctor; reason; }; }
   __id;    # the accessor for a consumer DEMANDING an identity: the minted value, or a named refusal (lazy)
 }
@@ -139,6 +140,14 @@ The rendered value is bounded by a 256-byte budget: a string or path is cut with
 290 bytes, except a top-level float, whose `toString` is bounded by its representation
 (`1.5e300` renders 308 B). The bound covers this value slot only: `struct`'s closed-world
 refusal and `strict` list unknown key names in full.
+
+The type's name in the same refusal is bounded by the same 256 bytes. A combinator renders
+its name within the budget and hands each member a strictly smaller one, so the name of a
+self-referential type is finite and its refusal returns. `let r = t.union [ t.int (t.listOf r) ]; in r.verify "a"` names the type in 250 bytes: `union<int,listOf<` 13 times, then `…` and the
+closing brackets. Past the budget, the remaining members collapse into `…`. A name of
+at most 256 − 3d bytes (d its nesting depth, so 253 when flat) is unchanged. This covers every
+name a gen-types combinator builds; a hand-built member whose own `name` interpolates the cycle
+still diverges.
 
 A type's `name` must be a string. A combinator given a member with a non-string name
 refuses by name where it first reads that name; `typedef`, `typedef'`, `enum` and `struct`
