@@ -3,6 +3,45 @@
 { genTypes, ... }:
 let
   t = genTypes;
+
+  # A stand-in for a merge strategy: a type record with a name and a domain predicate and NO
+  # `verify` -- the shape of every gen-merge structural type, kept local so this suite needs no
+  # gen-merge input.
+  strategy = {
+    name = "strategy";
+    admits = _: true;
+  };
+  evaluates = e: (builtins.tryEval (builtins.deepSeq e e)).success;
+  # every member-reading combinator over `m`, with a value the stand-in's domain would admit
+  over = m: {
+    option = (t.option m).verify 1;
+    listOf = (t.listOf m).verify [ 1 ];
+    listOfEmpty = (t.listOf m).verify [ ];
+    attrsOf = (t.attrsOf m).verify { x = 1; };
+    union =
+      (t.union [
+        m
+        t.str
+      ]).verify
+        1;
+    unionOrder =
+      (t.union [
+        t.str
+        m
+      ]).verify
+        "hello";
+    intersection =
+      (t.intersection [
+        m
+        t.any
+      ]).verify
+        1;
+    tuple = (t.tuple [ m ]).verify [ 1 ];
+    struct = (t.struct "s" { x = m; }).verify { x = 1; };
+    structMissingKey = (t.struct "s" { x = m; }).verify { };
+    optionalAttr = (t.struct "s" { x = t.optionalAttr m; }).verify { x = 1; };
+    refined = (t.refined m [ ]).verify 1;
+  };
 in
 {
   # ── option ──
@@ -209,4 +248,36 @@ in
     };
     expected = "in attrsOf<listOf<int>> value: in listOf<int> element: expected type 'int' but value \"x\" is of type 'string'";
   };
+
+  # ── a member that is not a checker ──
+  # Each combinator directly holding a member with no `verify` refuses catchably, on every value
+  # and in every member order (the refusal's message is pinned in ../tests-error.nix).
+  flake.tests.types-poly.test-cyiuz-a-member-without-verify-is-refused-catchably = {
+    expr = builtins.mapAttrs (_: evaluates) (over strategy);
+    expected = builtins.mapAttrs (_: _: false) (over strategy);
+  };
+  # control: the same combinators over a checker answer (null or an error string)
+  flake.tests.types-poly.test-cyiuz-control-checker-member-answers = {
+    expr = builtins.mapAttrs (_: evaluates) (over t.int);
+    expected = builtins.mapAttrs (_: _: true) (over t.int);
+  };
+  # The member check runs at USE, not when the combinator is applied: a self-referential type
+  # answers, where a formation-time check would diverge.
+  flake.tests.types-poly.test-cyiuz-recursive-type-answers-at-use =
+    let
+      r = t.union [
+        t.int
+        (t.listOf r)
+      ];
+    in
+    {
+      expr = r.verify [
+        1
+        [
+          2
+          [ 3 ]
+        ]
+      ];
+      expected = null;
+    };
 }

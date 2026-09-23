@@ -18,7 +18,11 @@
     gen-harness.lib.mkCi {
       inherit inputs;
       name = "gen-types";
+      # `testModules` is the whole of `flake.tests`, which the batch asserter behind
+      # `checks.default` forces unconditionally; cells asserting an ERROR live outside it, on
+      # `flake.testsError` (`./tests-error.nix`), read by `nix-unit --flake ./ci#testsError`.
       testModules = ./tests;
+      extraModules = [ ./tests-error.nix ];
       # `identity` reaches the suite because `tests/entry.nix` applies the STANDALONE root entry
       # with explicit arguments — which is what keeps that cell pure, since supplying both formals
       # means the shim's fetching defaults are never forced.

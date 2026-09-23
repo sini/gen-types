@@ -63,11 +63,16 @@ in
   # gen-schema carries a second `refined` implementation and the two must share one rather than
   # ship the vendoring defect one level up; and the shipped callers that pass inline lambdas today.
   refined =
-    { mkChecker, idOf }:
+    {
+      mkChecker,
+      idOf,
+      verifiersOf,
+    }:
     base: refinements:
     let
       refs = normalize refinements;
       name = "refined<${base.name}>";
+      baseVerify = builtins.head (verifiersOf "refined" [ base ]);
     in
     mkChecker "refined"
       {
@@ -78,7 +83,7 @@ in
       (
         v:
         let
-          baseErr = base.verify v;
+          baseErr = builtins.seq baseVerify (baseVerify v);
         in
         if baseErr != null then baseErr else firstFailingRefinement refs v
       )

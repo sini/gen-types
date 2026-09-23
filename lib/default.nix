@@ -25,7 +25,12 @@ let
     map
     ;
   core = import ./checkers.nix { inherit prelude identity; };
-  inherit (core) checkers mkChecker idOf;
+  inherit (core)
+    checkers
+    mkChecker
+    idOf
+    verifiersOf
+    ;
   refinedLib = import ./refined.nix { inherit prelude; };
   validateLib = import ./validate.nix { inherit prelude; };
   strictLib = import ./strict.nix { inherit prelude; };
@@ -206,7 +211,7 @@ in
 checkers
 // {
   # refinement contracts
-  refined = refinedLib.refined { inherit mkChecker idOf; };
+  refined = refinedLib.refined { inherit mkChecker idOf verifiersOf; };
   inherit (refinedLib) refinements;
 
   # closed-world unknown-key rejection

@@ -38,10 +38,12 @@ let
     optional
     ;
   inherit (builtins)
+    filter
     isFloat
     isInt
     isPath
     removeAttrs
+    seq
     split
     tryEval
     typeOf
@@ -245,6 +247,32 @@ let
   idOf =
     t: t.__mint.minted or (throw "identity: component type '${t.name}' has no mintable identity");
 
+  # A combinator's members, read as VERIFIERS. A member that is not a checker (no `verify`: a
+  # merge strategy, which carries `admits` instead, or a non-attrset) refuses the combinator BY
+  # NAME, catchably, where a bare `t.verify` would abort with an evaluator message.
+  #
+  # ★ THE CHECK RUNS AT USE, NOT AT FORMATION. Each combinator binds this list once in its own
+  # `let` and `seq`s it on entry to `verify`: forcing the list to WHNF runs the whole filter, so
+  # the refusal cannot depend on the value or on member order, and the check is shared across
+  # every call. Forcing it when the combinator is APPLIED instead diverges on a self-referential
+  # type (`let r = union [ int (listOf r) ]; in r`), which answers at use.
+  #
+  # ★ IT REACHES ONLY THE COMBINATOR DIRECTLY HOLDING THE MEMBER. A non-checker nested one level
+  # further in is read only when the outer combinator dispatches to it, so these still answer
+  # `null` for an ill-formed type: `listOf (union [ str m ])` given `[ ]`, `option (union [ str m ])`
+  # given `null`, and a struct key declared `optionalAttr m` when the key is absent. Refusing those
+  # would take a hereditary check, which is the formation-time force above.
+  verifiersOf =
+    ctor: ts:
+    let
+      bad = filter (t: !(isAttrs t && t ? verify)) ts;
+      nm = t: if isAttrs t then t.name or "<unnamed>" else "<a ${typeOf t}>";
+    in
+    if bad == [ ] then
+      map (t: t.verify) ts
+    else
+      throw "gen-types: ${ctor}: member '${nm (head bad)}' is not a checker (it carries no `verify`); ${ctor} composes value predicates, and a merge strategy is not one";
+
   # The substrate's own nullary vocabulary. `prim` is a REGISTRY of one argument — the primitive's
   # name — and it is total precisely because this library owns the predicate that name is bound to,
   # which is what the public `typedef` below cannot say of a caller's.
@@ -305,9 +333,10 @@ let
       t:
       let
         name = "option<${t.name}>";
+        f = head (verifiersOf "option" [ t ]);
       in
       mkChecker "option" (idOf t) name (
-        v: if v == null then null else addContext "in ${name}" (t.verify v)
+        v: seq f (if v == null then null else addContext "in ${name}" (f v))
       );
 
     # listOf<t>: a list whose every element is a t.
@@ -315,9 +344,10 @@ let
       t:
       let
         name = "listOf<${t.name}>";
+        f = head (verifiersOf "listOf" [ t ]);
       in
       mkChecker "listOf" (idOf t) name (
-        v: if !isList v then typeError name v else addContext "in ${name} element" (firstError t.verify v)
+        v: seq f (if !isList v then typeError name v else addContext "in ${name} element" (firstError f v))
       );
 
     # attrsOf<t>: an attrset whose every value is a t.
@@ -325,13 +355,13 @@ let
       t:
       let
         name = "attrsOf<${t.name}>";
+        f = head (verifiersOf "attrsOf" [ t ]);
       in
       mkChecker "attrsOf" (idOf t) name (
         v:
-        if !isAttrs v then
-          typeError name v
-        else
-          addContext "in ${name} value" (firstError t.verify (attrValues v))
+        seq f (
+          if !isAttrs v then typeError name v else addContext "in ${name} value" (firstError f (attrValues v))
+        )
       );
 
     # union<a,b,…>: a value satisfying at least one member (short-circuits).
@@ -342,10 +372,10 @@ let
       assert isList types;
       let
         name = "union<${concatStringsSep "," (map (t: t.name) types)}>";
-        funcs = map (t: t.verify) types;
+        funcs = verifiersOf "union" types;
       in
       mkChecker "union" (map idOf types) name (
-        v: if any (f: f v == null) funcs then null else typeError name v
+        v: seq funcs (if any (f: f v == null) funcs then null else typeError name v)
       );
 
     # intersection<a,b,…>: a value satisfying every member.
@@ -354,9 +384,11 @@ let
       assert isList types;
       let
         name = "intersection<${concatStringsSep "," (map (t: t.name) types)}>";
-        funcs = map (t: t.verify) types;
+        funcs = verifiersOf "intersection" types;
       in
-      mkChecker "intersection" (map idOf types) name (v: addContext "in ${name}" (firstFailing funcs v));
+      mkChecker "intersection" (map idOf types) name (
+        v: seq funcs (addContext "in ${name}" (firstFailing funcs v))
+      );
 
     # enum<name>: membership in a fixed set of literals.
     # The name is an ARGUMENT here rather than a rendering — it reaches the failure message — so it
@@ -386,7 +418,7 @@ let
       let
         name = "tuple<${concatStringsSep ", " (map (t: t.name) members)}>";
         len = length members;
-        funcs = map (t: t.verify) members;
+        funcs = verifiersOf "tuple" members;
         walk =
           v: i:
           if i == len then
@@ -399,12 +431,14 @@ let
       in
       mkChecker "tuple" (map idOf members) name (
         v:
-        if !isList v then
-          typeError name v
-        else if length v != len then
-          "expected tuple of length ${toString len} but value ${toPretty v} has length ${toString (length v)}"
-        else
-          addContext "in ${name}" (walk v 0)
+        seq funcs (
+          if !isList v then
+            typeError name v
+          else if length v != len then
+            "expected tuple of length ${toString len} but value ${toPretty v} has length ${toString (length v)}"
+          else
+            addContext "in ${name}" (walk v 0)
+        )
       );
 
     # optionalAttr<t>: a t, but flagged so struct treats the key as omittable.
@@ -412,8 +446,9 @@ let
       t:
       let
         name = "optionalAttr<${t.name}>";
+        f = head (verifiersOf "optionalAttr" [ t ]);
       in
-      mkChecker "optionalAttr" (idOf t) name (v: addContext "in ${name}" (t.verify v));
+      mkChecker "optionalAttr" (idOf t) name (v: seq f (addContext "in ${name}" (f v)));
 
     # struct<name>{ members }: a record. A freshly constructed struct starts from
     # the policy set total = true, unknown = true, verify = null.
@@ -436,6 +471,8 @@ let
       let
         memberNames = attrNames members;
         ctx = "in struct '${name}'";
+        # forced on entry to `verify`, before any member's `__name` or `verify` is read
+        memberCheck = verifiersOf "struct '${name}'" (attrValues members);
         build =
           {
             total ? true,
@@ -471,7 +508,8 @@ let
               else
                 "keys [${joinKeys extra}] are unrecognized, expected keys are [${joinKeys memberNames}]";
             funcs = memberFuncs ++ optional (!unknown) unknownFunc ++ optional (verify != null) verify;
-            verify' = v: if !isAttrs v then typeError name v else addContext ctx (firstFailing funcs v);
+            verify' =
+              v: seq memberCheck (if !isAttrs v then typeError name v else addContext ctx (firstFailing funcs v));
           in
           # ★ THE POLICY SET IS DISTINGUISHING CONTENT, not decoration: `total` and `unknown` change
           # which values the struct admits, so `.override` yields a DIFFERENT type and must yield a
@@ -507,5 +545,5 @@ in
 # publishing the door before the vocabulary is picked would decide it by accretion.
 {
   checkers = self;
-  inherit mkChecker idOf;
+  inherit mkChecker idOf verifiersOf;
 }

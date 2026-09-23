@@ -99,6 +99,24 @@ t.tuple [ t.int t.str ]              # positional [int, string]
 t.optionalAttr t.int                 # an int; struct treats the key as omittable
 ```
 
+A combinator's members must be checkers. A member with no `verify` (a gen-merge merge
+strategy such as `submodule`, which carries `admits` instead) is refused by name and
+catchably, when the combinator is first used, whatever the value and whatever the member
+order:
+
+```nix
+(t.union [ t.str submodule ]).verify "hello"
+# => throws "gen-types: union: member 'submodule' is not a checker (it carries no `verify`); …"
+```
+
+The check reaches the combinator that directly holds the member. It runs at use rather
+than when the combinator is applied, because a self-referential type
+(`let r = t.union [ t.int (t.listOf r) ]; in r`) would otherwise diverge. So a
+non-checker nested one level further in is found only when the outer combinator reaches
+it, and these ill-formed types still answer `null`:
+`t.listOf (t.union [ t.str m ])` given `[ ]`, `t.option (t.union [ t.str m ])` given
+`null`, and a struct key declared `t.optionalAttr m` when the key is absent.
+
 Errors thread context through nesting:
 
 ```nix
@@ -289,13 +307,18 @@ notion — that lives entirely in the engine above it.
 
 ```console
 $ cd ci && nix flake check          # or: nix-unit --flake .#tests
+$ cd ci && nix-unit --flake .#testsError
 ```
 
-136 nix-unit assertions across primitives, polymorphic combinators, structs, refined,
+156 nix-unit assertions across primitives, polymorphic combinators, structs, refined,
 validators, strict, identity, the `check` contract, and the purity invariant — every
 checker with success (`null`) and failure (exact error string) cases, plus nested and
 recursive types. The purity test walks `lib/` and fails CI on any `nixpkgs.lib`/
 module-system token; it proves it has teeth against an injected violation.
+
+Cells that assert an error's MESSAGE live in `ci/tests-error.nix`, on the `testsError`
+output: `nix flake check` forces every `tests` cell unconditionally, so a cell that throws
+on purpose would crash it rather than pass.
 
 ## License
 
