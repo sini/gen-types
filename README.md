@@ -70,6 +70,7 @@ Every constructor returns a record:
   __nameWithin;  # budget -> the name within that many bytes; a combinator reads a member through it
   __mint;  # tagged identity regime: { minted = "type:<sha256>"; } | { unmintable = { ctor; reason; }; }
   __id;    # the accessor for a consumer DEMANDING an identity: the minted value, or a named refusal (lazy)
+  __okAt;  # composites only: the step-indexed guard bounding type nesting for the mint (see below)
 }
 ```
 
@@ -301,7 +302,9 @@ even against itself and the relation would be *empty* rather than finer. Finer i
 safe direction here — the failure a type discipline exists to exclude is admitting
 semantically distinct values under one type, i.e. answering **true** wrongly.
 
-It compares the record **minus `__id`**, and minus nothing else. `__id` is an accessor,
+It compares the record **minus `__id`** and minus nothing else it could detonate on; the type-nesting
+guard `__okAt` (below) is excluded too, on a different ground: it is total, but it is an accessor
+rather than distinguishing content, and comparing it would force its cells. `__id` is an accessor,
 not distinguishing content, and in this regime that accessor *is* the named refusal — so
 comparing the record whole would force the refusal inside the very decision it exists to
 permit, and the decision would detonate. Excluding the field rather than making it absent
@@ -325,6 +328,26 @@ t.typeEq (t.strict [ "a" ]) (t.strict [ "b" ])      # => false  (both named "str
 t.typeEq (t.refined t.int r.positive)
          (t.refined t.int r.tcpPort)                # => false  (sealed: compares the records)
 (t.refined t.int r.positive).__id                   # => throws: a lambda in an identity position
+```
+
+**A self-referential or over-deep type has no identity, and says so catchably.** A member
+enters its composite's preimage as a fixed-width identity, which takes type nesting off the
+encoder's depth bound, so type nesting gets its own: 128 levels (ADR-0034, "every
+self-referential value … The budget's refusal point is CHOSEN"). Each composite carries
+`__okAt`, a step-indexed guard whose cell at index k holds when every member's cell at k − 1
+does. Reads strictly descend, so a cycle bottoms out at index 0 instead of re-entering its own
+mint, and the cells are memoised per node, so the cost is linear in the type graph and never in
+its expansion. A cycle and a type nested deeper than 128 levels take the same regime as a
+sealed checker: tagged `unmintable`, decided by `typeEq` over the record, and refused by name
+when `__id` is demanded. A type between 129 and about 900 deep therefore compares rather than
+mints, and gen-merge refuses an identical redeclaration of one by name rather than merging it.
+
+```nix
+let r = t.union [ t.int (t.listOf r) ]; in
+r.__mint                                            # => { unmintable = { ctor = "union"; … }; }
+t.typeEq r r                                        # => true   (the same binding)
+r.__id                                              # => throws: a type nests deeper than the
+                                                    #    type-identity depth bound (128 levels); …
 ```
 
 ## Handoff to `gen-merge`

@@ -35,4 +35,20 @@ in
       msg = "gen-types: union: member 'strategy' is not a checker";
     };
   };
+
+  # demanding a self-referential type's identity names the bound, not an evaluator blackhole
+  flake.testsError.types-recursive-identity.test-cyclic-identity-refusal-names-the-bound = {
+    expr =
+      let
+        r = t.union [
+          t.int
+          (t.listOf r)
+        ];
+      in
+      r.__id;
+    expectedError = {
+      type = "ThrownError";
+      msg = "identity: a type nests deeper than the type-identity depth bound \\(128 levels\\); a self-referential type has no identity";
+    };
+  };
 }

@@ -64,8 +64,7 @@ in
   # ship the vendoring defect one level up; and the shipped callers that pass inline lambdas today.
   refined =
     {
-      mkChecker,
-      idOf,
+      mkComposite,
       verifiersOf,
       renderNode,
     }:
@@ -77,11 +76,11 @@ in
       render = renderNode "refined" "refined<" "" ">" [ base ];
       baseVerify = builtins.head (verifiersOf "refined" [ base ]);
     in
-    mkChecker "refined"
-      {
-        base = idOf base;
+    mkComposite "refined" [ base ]
+      (ids: {
+        base = builtins.head ids;
         refinements = refs;
-      }
+      })
       render
       (
         v:

@@ -19,6 +19,8 @@
 #             is a caller-supplied lambda. This is what the equality relation reads.
 #   __id    — the accessor for a consumer that DEMANDS an identity: the minted value, or
 #             the mint's own named refusal. Lazy, and never what the relation reads.
+#   __okAt  — on a COMPOSITE only: the step-indexed guard over its members that bounds type
+#             nesting for the mint (see `identityGuard`). A leaf carries none.
 #
 # NO nixpkgs.lib here (purity invariant, see ci/tests/types-purity.nix): builtins
 # plus the handful of gen-prelude utilities the substrate already vendors.
@@ -262,9 +264,83 @@ let
   # regime for the encoder's own stated reason, with no list of sealed cases here to fall out of
   # date. `tryEval` contains it because every refusal in the mint is a `throw` rather than a
   # builtin's own abort — which is the property gen-identity's encoder was built to have.
-  mkChecker =
-    ctor: args: name0: verify:
+  mkChecker = ctor: args: mkComposite ctor [ ] (_: args);
+
+  # ★★ THE TYPE-NESTING AXIS HAS ITS OWN BOUND, because the flat preimage (`idOf` below) takes type
+  # nesting off the encoder's. Each `hashIdentity` call is bounded and total; the recursion runs
+  # BETWEEN calls, through each member's memoised `__mint`, so a self-referential type
+  # (`let r = union [ int (listOf r) ]; in r`) re-enters its own thunk — a blackhole `tryEval` does
+  # not catch — and an acyclic chain about 950 deep overflows the stack. ADR-0034 puts both outside
+  # the mint ("every self-referential value … The budget's refusal point is CHOSEN"), so such a type
+  # takes the COMPARED regime: `__mint` is tagged `unmintable`, `typeEq` decides over the record, and
+  # demanding `__id` is the named refusal below. Bounds rather than detection, as in gen-identity's
+  # own header: Nix has no observation that two visited nodes are one, so a cycle and an over-deep
+  # type are one refusal.
+  #
+  # ★ THE GUARD IS STEP-INDEXED (the k-th approximant of well-foundedness, Appel & McAllester 2001).
+  # A composite's cell at index k holds iff k > 0 and every member's cell at k - 1 holds. Each read
+  # is at a strictly smaller index, so no thunk is re-entered on a cycle — it bottoms out at index 0
+  # and refuses — and each (node, k) cell is memoised, so the cost is linear in the type GRAPH and
+  # never in its expansion: a DAG whose expansion is 2^128 still mints. A memoised height field
+  # blackholes on the same cycle, and an unmemoised walk pays the expansion; those are the two
+  # alternatives this rejects.
+  #
+  # ★ THE CELLS ARE A STREAM INDEXED DOWNWARD FROM THE BOUND, so only the cells a demand reaches are
+  # allocated: a node at depth d below the demanded root allocates d + 1, and a shallow type one to
+  # three. A leaf carries no stream at all; `top` stands in for it, and that absence is what leaves
+  # a leaf's key set untouched for gen-merge.
+  #
+  # ★ THE BOUND IS A CONSTANT, NOT A PARAMETER, against gen-graph's "every cap is a maxDepth
+  # PARAMETER" precedent (den-hoag-6ag6, den-hoag-82ib): a regime must be a function of the type
+  # alone, and a caller-supplied depth would let two consumers disagree on whether one type mints.
+  # The margin is what buys caller context. 128 levels mint in about 1,400 frames against the
+  # evaluator's 10,000, and a refusal costs about 650; gen-identity's own `identityDepth` is a
+  # constant with a margin argument too. A type between 129 and about 900 deep therefore moves from
+  # MINTED to COMPARED, and at gen-merge an identical redeclaration of such a type is refused by name
+  # rather than merged.
+  typeIdentityDepth = 128;
+  depthRefusal = throw "identity: a type nests deeper than the type-identity depth bound (${toString typeIdentityDepth} levels); a self-referential type has no identity";
+  #
+  # ★ THE STREAM ENDS AT INDEX 0 (`next = null`), which no read reaches because the cell at 0 holds
+  # without reading its members. An unending stream would make `deepSeq` of every composite type
+  # diverge, since it forces through `__okAt`. A leaf's stand-in is one shared chain of the same
+  # length, memoised here.
+  topFrom = k: {
+    ok = true;
+    next = if k == 0 then null else topFrom (k - 1);
+  };
+  top = topFrom typeIdentityDepth;
+  cellOf = m: if isAttrs m && m ? __okAt then m.__okAt else top;
+  step = k: cells: {
+    ok = k > 0 && all (c: c.next.ok) cells;
+    next = if k == 0 then null else step (k - 1) (map (c: c.next) cells);
+  };
+  # The guard over a construction's members, for every producer that mints over a member's `__mint`:
+  # `okAt` is what the producer carries as `__okAt`, `ok` gates its mint, and `refusal` is its
+  # `__id` when `ok` fails. A producer that mints over members and carries no `__okAt` reopens the
+  # blackhole for any cycle through it.
+  identityGuard =
+    members:
     let
+      okAt = step typeIdentityDepth (map cellOf members);
+    in
+    {
+      inherit okAt;
+      ok = members == [ ] || okAt.ok;
+      refusal = depthRefusal;
+    };
+
+  # ★ `args` IS BUILT FROM `members`, never beside them: a member identity reaches the preimage only
+  # through `mkArgs ids`, where `ids` is `idOf` over the same members the guard reads. Two lists kept
+  # in step by hand reopen the blackhole silently for a constructor that passes one and not the
+  # other. `members` is a list, or an attrset whose `ids` are keyed alike.
+  mkComposite =
+    ctor: members: mkArgs: name0: verify:
+    let
+      memberList = if isList members then members else attrValues members;
+      ids = if isList members then map idOf members else mapAttrs (_: idOf) members;
+      args = mkArgs ids;
+      guard = identityGuard memberList;
       # a combinator hands a RENDERER (budget -> string), a leaf or a nominal type its name
       name = if isFunction name0 then name0 nameBudget else name0;
       within = if isFunction name0 then name0 else leafWithin name0;
@@ -281,7 +357,7 @@ let
             }
             .${l}
           );
-      attempt = tryEval mint;
+      attempt = if guard.ok then tryEval mint else { success = false; };
     in
     {
       inherit name verify;
@@ -324,8 +400,9 @@ let
       # LAZY, so a consumer that never demands one never hashes; and it is deliberately NOT what
       # the equality relation reads, because demanding an identity of a sealed value is a refusal
       # while DECIDING about one is not.
-      __id = mint;
-    };
+      __id = if guard.ok then mint else guard.refusal;
+    }
+    // (if memberList == [ ] then { } else { __okAt = guard.okAt; });
 
   # A component that is itself a checker enters the preimage as its IDENTITY. A component with no
   # mintable identity refuses the composite BY NAME rather than through a missing attribute, so
@@ -333,10 +410,11 @@ let
   #
   # ★ ENTERING AS AN IDENTITY RATHER THAN AS A VALUE IS WHAT KEEPS TYPE NESTING OFF THE ENCODER'S
   # BOUNDS. An identity is a fixed 69 characters whatever it stands for, so a composite's preimage
-  # is flat in the depth of the type it describes: measured, a 300-deep `listOf` chain mints and
-  # separates from a 299-deep one, well past gen-identity's depth bound of 512 levels. The bound is
-  # still real and still reachable — the control in the same run is a 600-deep list handed to `enum`
-  # as a MEMBER, which is caller data, takes the full walk, and refuses.
+  # is flat in the depth of the type it describes, and type nesting is bounded instead by
+  # `typeIdentityDepth` above: a 128-deep `listOf` chain mints and separates from a 127-deep one,
+  # and a 129-deep one is unmintable. gen-identity's own depth bound is still real and still
+  # reachable — a 600-deep list handed to `enum` as a MEMBER is caller data, takes the full walk,
+  # and refuses.
   idOf =
     t:
     t.__mint.minted
@@ -476,7 +554,7 @@ let
         name = render nameBudget;
         f = head (verifiersOf "option" [ t ]);
       in
-      mkChecker "option" (idOf t) render (
+      mkComposite "option" [ t ] head render (
         v: seq f (if v == null then null else addContext "in ${name}" (f v))
       );
 
@@ -488,7 +566,7 @@ let
         name = render nameBudget;
         f = head (verifiersOf "listOf" [ t ]);
       in
-      mkChecker "listOf" (idOf t) render (
+      mkComposite "listOf" [ t ] head render (
         v: seq f (if !isList v then typeError name v else addContext "in ${name} element" (firstError f v))
       );
 
@@ -500,7 +578,7 @@ let
         name = render nameBudget;
         f = head (verifiersOf "attrsOf" [ t ]);
       in
-      mkChecker "attrsOf" (idOf t) render (
+      mkComposite "attrsOf" [ t ] head render (
         v:
         seq f (
           if !isAttrs v then typeError name v else addContext "in ${name} value" (firstError f (attrValues v))
@@ -524,7 +602,7 @@ let
         name = render nameBudget;
         funcs = verifiersOf "union" types;
       in
-      mkChecker "union" (map idOf types) render (
+      mkComposite "union" types (ids: ids) render (
         v: seq funcs (if any (f: f v == null) funcs then null else typeError name v)
       );
 
@@ -537,7 +615,7 @@ let
         name = render nameBudget;
         funcs = verifiersOf "intersection" types;
       in
-      mkChecker "intersection" (map idOf types) render (
+      mkComposite "intersection" types (ids: ids) render (
         v: seq funcs (addContext "in ${name}" (firstFailing funcs v))
       );
 
@@ -586,7 +664,7 @@ let
             in
             if e != null then "in element ${toString i}: ${e}" else walk v (i + 1);
       in
-      mkChecker "tuple" (map idOf members) render (
+      mkComposite "tuple" members (ids: ids) render (
         v:
         seq funcs (
           if !isList v then
@@ -606,7 +684,7 @@ let
         name = render nameBudget;
         f = head (verifiersOf "optionalAttr" [ t ]);
       in
-      mkChecker "optionalAttr" (idOf t) render (v: seq f (addContext "in ${name}" (f v)));
+      mkComposite "optionalAttr" [ t ] head render (v: seq f (addContext "in ${name}" (f v)));
 
     # struct<name>{ members }: a record. A freshly constructed struct starts from
     # the policy set total = true, unknown = true, verify = null.
@@ -680,15 +758,15 @@ let
           # is what stops one struct's extra invariant from dragging every struct onto the
           # comparison limb. Nothing here tests for it: `verify = null` encodes and a lambda is
           # refused by the encoder, so the two arms fall out of the mint's own totality.
-          mkChecker "struct" {
+          mkComposite "struct" members (ids: {
             inherit
               name
               total
               unknown
               verify
               ;
-            members = mapAttrs (_: idOf) members;
-          } name verify'
+            members = ids;
+          }) name verify'
           // {
             override = delta: build ({ inherit total unknown verify; } // delta);
           };
@@ -706,8 +784,11 @@ in
   checkers = self;
   inherit
     mkChecker
+    mkComposite
+    identityGuard
     idOf
     verifiersOf
     renderNode
+    typeIdentityDepth
     ;
 }

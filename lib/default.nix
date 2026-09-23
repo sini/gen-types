@@ -19,16 +19,20 @@
 { prelude, identity }:
 let
   inherit (prelude)
+    all
     attrValues
     elem
     any
     map
     ;
+  inherit (builtins) isAttrs;
   core = import ./checkers.nix { inherit prelude identity; };
   inherit (core)
     checkers
     mkChecker
-    idOf
+    mkComposite
+    identityGuard
+    typeIdentityDepth
     verifiersOf
     renderNode
     ;
@@ -77,6 +81,11 @@ let
     "attrs"
     "package"
   ];
+
+  foreignWithin =
+    d: t:
+    d <= typeIdentityDepth
+    && all (foreignWithin (d + 1)) (if isAttrs t then attrValues (t.nestedTypes or { }) else [ ]);
 
   mintForeign =
     t:
@@ -141,15 +150,19 @@ let
       # identity through the recursive mint, never name alone. A record that merely lacks `__mint`
       # AND `nestedTypes` (the pre-migration population this arm still covers) falls through to the
       # unchanged name-only branch below.
+      #
+      # ★ A nixpkgs record cannot carry the step-indexed memo, and `mintForeign` is unmemoised
+      # already, so the foreign branch takes a depth-bounded walk over `nestedTypes` first: a cyclic
+      # or over-deep foreign type is sealed rather than overflowing the stack inside the mint.
       let
-        m = mintForeign v;
+        m = if foreignWithin 0 v then mintForeign v else { sealed = v.name or "<unnamed>"; };
       in
       if m ? minted then { inherit (m) minted; } else { unmintable = m.sealed; }
     else
       { unmigrated = v.name; };
 
-  # The comparison SUBJECT for the sealed arm: the reified record MINUS `__id`, and
-  # minus nothing else.
+  # The comparison SUBJECT for the sealed arm: the reified record MINUS its two accessors,
+  # `__id` and `__okAt`, and minus nothing else.
   #
   # ★ `__id` IS AN ACCESSOR, NOT DISTINGUISHING CONTENT, and in the sealed regime that
   # accessor IS the named refusal. Comparing the record without excluding it forces the
@@ -179,7 +192,16 @@ let
   # is a minted-against-minted comparison, and that arm never reaches here: it compares
   # digests, which is a genuine DEMAND for an identity, where a catchable named refusal
   # is the correct outcome rather than a hazard.
-  comparisonSubject = v: removeAttrs v [ "__id" ];
+  #
+  # ★ `__okAt` IS EXCLUDED BESIDE IT, on a different ground: it is total (a cyclic type's stream
+  # bottoms out at index 0), so nothing detonates, but it is an accessor rather than distinguishing
+  # content, and comparing it would force up to `typeIdentityDepth + 1` cells of each side.
+  comparisonSubject =
+    v:
+    removeAttrs v [
+      "__id"
+      "__okAt"
+    ];
 
   # CONSERVATIVE EQUALITY — Palmer's own term (§2.3, §5.3); "intensional" qualifies the
   # FUNCTION and never the equality, and the misnomer is what read as a licence to
@@ -214,8 +236,7 @@ checkers
   # refinement contracts
   refined = refinedLib.refined {
     inherit
-      mkChecker
-      idOf
+      mkComposite
       verifiersOf
       renderNode
       ;
@@ -247,4 +268,10 @@ checkers
   # the same type and names it the way a type discipline would.
   typeEq = conservativeEq;
   inherit conservativeEq;
+
+  # ── the type-identity guard, for a producer outside this library ──
+  # A construct that mints over a member's `__mint` must step the same index or it reopens the
+  # blackhole a self-referential type closes (see `identityGuard` in `./checkers.nix`); gen-schema's
+  # `refined` is the one such producer. Exported so the bound and its refusal stay single-sourced.
+  inherit identityGuard;
 }
