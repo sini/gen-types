@@ -52,8 +52,9 @@ let
   #
   # Mirrors `idOf`/`mkChecker` above: a child enters the parent's preimage as ITS OWN IDENTITY,
   # never as the raw child record — a composite is structural exactly as deep as its members are,
-  # and the walk never touches `.check`/`.merge`/`.functor.type` (nixpkgs' one self-referential
-  # field) at any depth — only `.name` and `.nestedTypes`.
+  # and the walk never applies or walks `.check`/`.merge` at any depth. It reads `.name` and
+  # `.nestedTypes`, and at a registry leaf it compares `.functor.type` (nixpkgs' one
+  # self-referential field) against the leaf itself under `==`, never descending into it (below).
   #
   # ★ LEAF CLASSIFICATION IS BY REGISTRY, NOT BY "EMPTY `nestedTypes`" ALONE (gate finding,
   # `den-hoag-2e3cc`). Driven over twelve nixpkgs combinator families: five reach empty
@@ -70,6 +71,17 @@ let
   # ADR-0034's sealed-limb treatment: no identity minted, tagged `unmintable` so `identityOf` routes
   # it to `conservativeEq`'s existing full-record comparison — the same decision that regime already
   # carries, with no new dispatch branch needed.
+  #
+  # ★ A REGISTRY NAME IS NECESSARY, NOT SUFFICIENT: THE LEAF MUST ALSO BE ITS OWN LIB'S BINDING AT
+  # THAT NAME (`den-hoag-0x4hh`). nixpkgs' `addCheck` returns `elemType // { check; merge; }`, and a
+  # raw `str // { check = …; }` does the same, so both keep the base's `name`, empty `nestedTypes`
+  # and `functor` while accepting different values. Registry membership alone minted every such
+  # record as the bare leaf, and `typeEq` answered `true` for two types that accept different
+  # values. The added predicate is a lambda and cannot enter the preimage (ADR-0034), so the leaf
+  # test adds one inert datum: constructor reflexivity, `t.functor.type == t`. A record that fails
+  # it takes the sealed path above and is decided by COMPARISON (ADR-0034's compared regime), which
+  # is finer than equality: two separately built `addCheck str f` with the same `f` also compare
+  # unequal. The conjunct only withholds mints, so its one possible error is toward COMPARED.
   foreignLeafRegistry = [
     "str"
     "int"
@@ -87,6 +99,16 @@ let
     d <= typeIdentityDepth
     && all (foreignWithin (d + 1)) (if isAttrs t then attrValues (t.nestedTypes or { }) else [ ]);
 
+  # ★ WHAT THE LEAF TEST'S REFLEXIVITY CONJUNCT CERTIFIES, AND ITS ARGUED LIMIT. nixpkgs'
+  # `defaultFunctor` sets `type = lib.types.${name} or null`: a LATE-BOUND NAME LOOKUP in the
+  # record's own lib fixpoint, not an inert constructor datum. So `t.functor.type == t` certifies
+  # "t is its own lib's binding at `t.name`", not "t is the constructor's output". A check-carrying
+  # record INSTALLED AT ITS OWN NAME, e.g.
+  # `lib.extend (_: p: { types = p.types // { int = p.types.addCheck p.types.int f; }; })`,
+  # is reflexive, still mints as `int`, and still collapses against the genuine leaf and against a
+  # differently-checked install. That residue predates the conjunct and is filed as
+  # `den-hoag-hc755`. The claim this construction makes is scoped to records NOT bound at
+  # `lib.types.<name>`; silence here would not be a classification (ADR-0034).
   mintForeign =
     t:
     let
@@ -94,7 +116,7 @@ let
       mintedChildren = map mintForeign children;
     in
     if children == [ ] then
-      if elem t.name foreignLeafRegistry then
+      if elem t.name foreignLeafRegistry && ((t.functor or { }).type or null) == t then
         {
           minted = identity.hashIdentity "type" [ "name" "children" ] (
             l:
@@ -196,6 +218,26 @@ let
   # ★ `__okAt` IS EXCLUDED BESIDE IT, on a different ground: it is total (a cyclic type's stream
   # bottoms out at index 0), so nothing detonates, but it is an accessor rather than distinguishing
   # content, and comparing it would force up to `typeIdentityDepth + 1` cells of each side.
+  #
+  # ★ ENUMERATED EXCEPTION TO TOTALITY (ADR-0025 item 1: "enumerated and argued, never silent";
+  # `den-hoag-6xj95`). The `==` this subject feeds is NOT total over FOREIGN records drawn from TWO
+  # DISTINCT nixpkgs lib instances (`lib.extend`, or two nixpkgs inputs). A nixpkgs record's
+  # `functor.type` points back at a leaf record of its own lib, Nix compares attributes in
+  # symbol-interning order, and when `functor` is interned before the first differing attribute
+  # the comparison recurses until the evaluator aborts with an UNCATCHABLE stack overflow. Whether
+  # it aborts or answers `false` therefore depends on what text the evaluator parsed first, on host
+  # Nix, Determinate Nix and Lix alike. The class: ANY cross-instance pair that reaches this arm
+  # may abort. Measured to abort in at least one order: `port`, `ints.between 0 1`, `nonEmptyStr`,
+  # and each registry leaf wrapped by `addCheck` or `//`, which the reflexivity conjunct in
+  # `mintForeign` sends here rather than minting as the leaf. Measured to answer `false` in every
+  # order: `path`, `enum`. This file's own text shifts the order: with the conjunct's `functor`
+  # identifier parsed before nixpkgs' types, cross-instance `port`, `ints.between` and
+  # `nonEmptyStr` go from `false` to an overflow even with no prefix.
+  # Same-instance comparisons are unaffected: a shared `functor` Value takes the pointer shortcut.
+  # Argued: what the conjunct replaced for the `addCheck`/`//` population is a SILENT `true` for
+  # types that accept different values, a name-only mint ADR-0034 rejects, and an abort is loud
+  # where that answer was silent. The repair, breaking the `functor.type` cycle at every depth,
+  # belongs to this binding and is `den-hoag-6xj95`.
   comparisonSubject =
     v:
     removeAttrs v [

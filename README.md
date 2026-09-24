@@ -233,16 +233,45 @@ them. The relation is Palmer's **conservative equality** (§2.3, §5.3 — his o
 "intensional" qualifies the *function*, never the equality), and it dispatches on the
 checker's identity REGIME rather than reading a single field:
 
-| regime     | the checker carries   | the relation                                    |
-| ---------- | --------------------- | ----------------------------------------------- |
-| minted     | `__mint.minted`       | digest equality                                 |
-| unmintable | `__mint`, no `minted` | Nix `==` on the checker record **minus `__id`** |
-| unmigrated | no `__mint`           | `name` equality                                 |
+| regime     | the checker carries           | the relation                                    |
+| ---------- | ----------------------------- | ----------------------------------------------- |
+| minted     | `__mint.minted`               | digest equality                                 |
+| unmintable | `__mint`, no `minted`         | Nix `==` on the checker record **minus `__id`** |
+| unmigrated | no `__mint`, no `nestedTypes` | `name` equality                                 |
 
-Every checker this library constructs is stamped, so the **unmigrated** arm now serves
-only a *foreign* record — one gen-types did not build. `__mint` is a tagged sum, and a
-reader that branched on field presence and then read `.minted` raw would abort
+Every checker this library constructs is stamped. A nixpkgs `lib.types.*` record carries
+no `__mint` but does carry `nestedTypes`, and it takes the foreign rule below. So the
+**unmigrated** arm now serves only a record that carries neither. `__mint` is a tagged sum,
+and a reader that branched on field presence and then read `.minted` raw would abort
 uncatchably on a checker that has no mintable identity.
+
+**A foreign (nixpkgs) type is minted structurally or compared, never minted by name.**
+`typeEq` mints a `lib.types.*` record over its name and its members' identities. A leaf
+mints only when both of these hold:
+
+- its name is one of the nixpkgs leaves measured first-order (`str`, `int`, `bool`, `float`,
+  `anything`, `raw`, `unspecified`, `attrs`, `package`);
+- it is **its own lib's binding at that name**: `t.functor.type == t`.
+
+Every other foreign record, and every composite over one, is compared as a record, the way
+the unmintable arm is. The second condition is what separates `addCheck str p` from `str`.
+nixpkgs' `addCheck`, like any `str // { check = …; }`, keeps the base's `name` and `functor`
+while accepting different values, and the added predicate is a lambda that no mint can read.
+Without that condition, `typeEq (addCheck str p) (addCheck str q)` answered `true`.
+
+Two limits apply:
+
+- **Reflexivity is a name lookup, not a constructor datum.** nixpkgs sets
+  `functor.type = lib.types.${name}` in the record's own lib. So a check-carrying record
+  installed *at its own name* through `lib.extend` is reflexive, still mints as the leaf,
+  and still compares equal to the genuine leaf. The guarantee above covers only records
+  that are not bound at `lib.types.<name>`.
+- **A comparison across two nixpkgs lib instances can abort.** Nix `==` over two distinct
+  instances' records can recurse through `functor.type` until the evaluator overflows its
+  stack, and that abort cannot be caught. Whether it happens depends on the order in which
+  the evaluator first parsed attribute names. Measured: `port`, `ints.between`,
+  `nonEmptyStr` and an `addCheck`'d leaf each abort across two instances in at least one
+  order. Comparisons within one lib instance are unaffected.
 
 ### What a checker's identity is minted over
 
