@@ -392,9 +392,16 @@ notion — that lives entirely in the engine above it.
 ## Tests
 
 ```console
-$ cd ci && nix flake check          # or: nix-unit --flake .#tests
-$ cd ci && nix-unit --flake .#testsError
+$ nix develop ./ci --command ci                # guarded
+$ nix develop ./ci --command ci --tests-error  # guarded
+$ cd ci && nix flake check          # or: nix-unit --flake .#tests — both unguarded
+$ cd ci && nix-unit --flake .#testsError        # unguarded
 ```
+
+`ci` refuses when anything under a declared read root is unknown to git — any extension or name,
+`_`-prefixed included — and the remedy is `git add` or a move. The bare `nix-unit --flake ./ci#tests`
+and `nix flake check ./ci` are unguarded: they read a git-filtered copy of the tree, so an untracked
+cell is silently absent and the run stays green.
 
 171 nix-unit assertions across primitives, polymorphic combinators, structs, refined,
 validators, strict, identity, the `check` contract, refusal rendering, and the purity invariant — every
