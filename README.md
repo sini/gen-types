@@ -245,33 +245,30 @@ no `__mint` but does carry `nestedTypes`, and it takes the foreign rule below. S
 and a reader that branched on field presence and then read `.minted` raw would abort
 uncatchably on a checker that has no mintable identity.
 
-**A foreign (nixpkgs) type is minted structurally or compared, never minted by name.**
-`typeEq` mints a `lib.types.*` record over its name and its members' identities. A leaf
-mints only when both of these hold:
+**A foreign (nixpkgs) type is compared, never minted.** A `lib.types.*` record's `name` and
+`nestedTypes` claim a constructor without declaring one, so `typeEq` compares the record, the
+way the unmintable arm does. A mint over that claim answered `true` for types that accept
+different values:
 
-- its name is one of the nixpkgs leaves measured first-order (`str`, `int`, `bool`, `float`,
-  `anything`, `raw`, `unspecified`, `attrs`, `package`);
-- it is **its own lib's binding at that name**: `t.functor.type == t`.
+- an `addCheck`'d `int` installed at `types.int` through `lib.extend`, against the stock `int`;
+- a record whose `functor.type` is itself (gen-merge's `mkOptionType`), against another with
+  the same name and a different check;
+- stock `nonEmptyListOf str`, whose `.name` is `listOf`, against `listOf str`.
 
-Every other foreign record, and every composite over one, is compared as a record, the way
-the unmintable arm is. The second condition is what separates `addCheck str p` from `str`.
-nixpkgs' `addCheck`, like any `str // { check = …; }`, keeps the base's `name` and `functor`
-while accepting different values, and the added predicate is a lambda that no mint can read.
-Without that condition, `typeEq (addCheck str p) (addCheck str q)` answered `true`.
+No narrower mint exists. A foreign record's closures close over its lib instance, and nothing
+observable names that instance: source positions name the code, not the environment, and a
+lib's `version` does not move under `lib.extend`. The price is that separately built foreign
+twins, and one leaf across two lib instances, compare unequal. A type that needs structural
+identity is written with this library's constructors, which mint natively. gen-merge's
+composites carry no `__mint` yet, so they are compared like any foreign record.
 
-Two limits apply:
-
-- **Reflexivity is a name lookup, not a constructor datum.** nixpkgs sets
-  `functor.type = lib.types.${name}` in the record's own lib. So a check-carrying record
-  installed *at its own name* through `lib.extend` is reflexive, still mints as the leaf,
-  and still compares equal to the genuine leaf. The guarantee above covers only records
-  that are not bound at `lib.types.<name>`.
-- **A comparison across two nixpkgs lib instances can abort.** Nix `==` over two distinct
-  instances' records can recurse through `functor.type` until the evaluator overflows its
-  stack, and that abort cannot be caught. Whether it happens depends on the order in which
-  the evaluator first parsed attribute names. Measured: `port`, `ints.between`,
-  `nonEmptyStr` and an `addCheck`'d leaf each abort across two instances in at least one
-  order. Comparisons within one lib instance are unaffected.
+One limit applies: **a hand-grafted comparison across two nixpkgs lib instances can abort.**
+When two records share every closure field and differ only in grafted cross-instance data
+(`x // { foo = t.port; }` against `x // { foo = u.port; }`), Nix `==` can recurse through a
+`functor.type` back-edge until the evaluator overflows its stack, and that abort cannot be
+caught. Whether it happens depends on the order in which the evaluator first parsed attribute
+names. Records built separately differ in their closures and compare `false` before reaching
+the back-edge. Comparisons within one lib instance are unaffected.
 
 ### What a checker's identity is minted over
 

@@ -425,7 +425,7 @@ in
     };
   };
 
-  # ── foreign (nixpkgs) type structural identity — 2026-09-17 spec, gate conditions 1 & 2 ──
+  # ── foreign (nixpkgs) type identity — 2026-09-17 spec, gate conditions 1 & 2 ──
   #
   # `lib.types.*` is nixpkgs' own combinator family: genuine `mkOptionType` records carrying no
   # `__mint`, which is what makes `identityOf`'s `nestedTypes` branch live. RED before this
@@ -434,13 +434,17 @@ in
   flake.tests.types-identity.test-foreign-listOf-discriminates-structurally = {
     expr = {
       differentElem = t.typeEq (ft.listOf ft.str) (ft.listOf ft.int);
-      # POSITIVE CONTROL: the predicate discriminates in the corrected direction, not merely
-      # "always false" now — two separately-built listOf<str> still unify.
-      sameElemSeparateBuild = t.typeEq (ft.listOf ft.str) (ft.listOf ft.str);
+      # POSITIVE CONTROL: not "always false" — one listOf<str> binding equals itself. Separately
+      # built twins are compared as records and unequal (`den-hoag-hc755`); no cell pins that.
+      sharedBinding =
+        let
+          x = ft.listOf ft.str;
+        in
+        t.typeEq x x;
     };
     expected = {
       differentElem = false;
-      sameElemSeparateBuild = true;
+      sharedBinding = true;
     };
   };
 
@@ -459,11 +463,9 @@ in
     expected = false;
   };
 
-  # `path` is gate-suggested as a registry member and measured UNSAFE: `pathWith`'s three callers
-  # (`path`, `pathInStore`, `externalPath`) all share the hardcoded name `"path"` while differing
-  # in accept/reject behaviour, so registering it would reproduce this spec's own target defect
-  # one layer down. This pins the exclusion so a later "helpful" registry addition cannot regress
-  # it silently.
+  # `pathWith`'s three callers (`path`, `pathInStore`, `externalPath`) all share the hardcoded name
+  # `"path"` while differing in accept/reject behaviour, so any mint over the name reproduces the
+  # defect. This pins the pair apart so a later name-keyed foreign mint cannot regress it silently.
   flake.tests.types-identity.test-foreign-path-family-not-falsely-unified = {
     expr = t.typeEq ft.path ft.pathInStore;
     expected = false;

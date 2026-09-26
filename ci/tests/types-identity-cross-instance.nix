@@ -32,7 +32,6 @@ in
       intsBetween = t.typeEq (ft.ints.between 0 1) (u.ints.between 0 1);
       nonEmptyStr = t.typeEq ft.nonEmptyStr u.nonEmptyStr;
       listOfPort = t.typeEq (ft.listOf ft.port) (u.listOf u.port);
-      registryLeafAcross = t.typeEq ft.str u.str;
       portSelf = t.typeEq ft.port ft.port;
       derivedDiffers = t.typeEq (ft.port // { description = "a"; }) (ft.port // { description = "b"; });
       shallowCopy = t.typeEq ft.port (ft.port // { });
@@ -44,7 +43,6 @@ in
       intsBetween = false;
       nonEmptyStr = false;
       listOfPort = false;
-      registryLeafAcross = true;
       portSelf = true;
       derivedDiffers = false;
       shallowCopy = true;

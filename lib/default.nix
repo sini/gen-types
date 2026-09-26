@@ -19,131 +19,21 @@
 { prelude, identity }:
 let
   inherit (prelude)
-    all
-    attrValues
-    elem
-    any
-    map
     filter
     genAttrs
     ;
-  inherit (builtins) isAttrs;
   core = import ./checkers.nix { inherit prelude identity; };
   inherit (core)
     checkers
     mkChecker
     mkComposite
     identityGuard
-    typeIdentityDepth
     verifiersOf
     renderNode
     ;
   refinedLib = import ./refined.nix { inherit prelude; };
   validateLib = import ./validate.nix { inherit prelude; };
   strictLib = import ./strict.nix { inherit prelude; };
-
-  # ── foreign (nixpkgs) type structural identity ──
-  #
-  # An imported `lib.types.*` value carries no `__mint` at all — it is a nixpkgs `mkOptionType`
-  # record, not one of this library's own checkers — so `identityOf` below cannot dispatch on
-  # `__mint`'s tag for it. Where it carries nixpkgs' own recursive structural field `nestedTypes`
-  # (`{}` at a leaf, `{elemType=...}` for `listOf`/`attrsOf`/`nullOr`, `{left;right;}` for `either`,
-  # and so on for the rest of the combinator family — `nestedTypes ? {}` is `mkOptionType`'s own
-  # default, so every genuine import carries it), route it through this recursive mint instead of a
-  # name-only fallback (ADR-0034: "a name-only comparison is rejected anywhere it mints or keys").
-  #
-  # Mirrors `idOf`/`mkChecker` above: a child enters the parent's preimage as ITS OWN IDENTITY,
-  # never as the raw child record — a composite is structural exactly as deep as its members are,
-  # and the walk never applies or walks `.check`/`.merge` at any depth. It reads `.name` and
-  # `.nestedTypes`, and at a registry leaf it compares `.functor.type` (nixpkgs' one
-  # self-referential field) against the leaf itself under `==`, never descending into it (below).
-  #
-  # ★ LEAF CLASSIFICATION IS BY REGISTRY, NOT BY "EMPTY `nestedTypes`" ALONE (gate finding,
-  # `den-hoag-2e3cc`). Driven over twelve nixpkgs combinator families: five reach empty
-  # `nestedTypes` while their distinguishing content lives in a `check`/`merge` closure this walk
-  # never inspects — `enum`, `addCheck`'s result, `ints.between`, `submodule`, `separatedString` —
-  # and an unconditional "empty ⇒ leaf, mint by name" rule mints two genuinely distinct instances of
-  # each identically. The registry below is the finite set of nixpkgs' own leaf names measured
-  # genuinely first-order at the pinned rev; `path` is gate-suggested and EXCLUDED on measurement —
-  # `pathWith`'s three callers (`path`, `pathInStore`, `externalPath`) all produce the identical
-  # hardcoded `.name == "path"` while differing in accept/reject behaviour, so registering it would
-  # reproduce this construction's own target defect one layer down (spec §2).
-  #
-  # A name outside the registry, or a composite with a sealed member anywhere in it, takes
-  # ADR-0034's sealed-limb treatment: no identity minted, tagged `unmintable` so `identityOf` routes
-  # it to `conservativeEq`'s existing full-record comparison — the same decision that regime already
-  # carries, with no new dispatch branch needed.
-  #
-  # ★ A REGISTRY NAME IS NECESSARY, NOT SUFFICIENT: THE LEAF MUST ALSO BE ITS OWN LIB'S BINDING AT
-  # THAT NAME (`den-hoag-0x4hh`). nixpkgs' `addCheck` returns `elemType // { check; merge; }`, and a
-  # raw `str // { check = …; }` does the same, so both keep the base's `name`, empty `nestedTypes`
-  # and `functor` while accepting different values. Registry membership alone minted every such
-  # record as the bare leaf, and `typeEq` answered `true` for two types that accept different
-  # values. The added predicate is a lambda and cannot enter the preimage (ADR-0034), so the leaf
-  # test adds one inert datum: constructor reflexivity, `t.functor.type == t`. A record that fails
-  # it takes the sealed path above and is decided by COMPARISON (ADR-0034's compared regime), which
-  # is finer than equality: two separately built `addCheck str f` with the same `f` also compare
-  # unequal. The conjunct only withholds mints, so its one possible error is toward COMPARED.
-  foreignLeafRegistry = [
-    "str"
-    "int"
-    "bool"
-    "float"
-    "anything"
-    "raw"
-    "unspecified"
-    "attrs"
-    "package"
-  ];
-
-  foreignWithin =
-    d: t:
-    d <= typeIdentityDepth
-    && all (foreignWithin (d + 1)) (if isAttrs t then attrValues (t.nestedTypes or { }) else [ ]);
-
-  # ★ WHAT THE LEAF TEST'S REFLEXIVITY CONJUNCT CERTIFIES, AND ITS ARGUED LIMIT. nixpkgs'
-  # `defaultFunctor` sets `type = lib.types.${name} or null`: a LATE-BOUND NAME LOOKUP in the
-  # record's own lib fixpoint, not an inert constructor datum. So `t.functor.type == t` certifies
-  # "t is its own lib's binding at `t.name`", not "t is the constructor's output". A check-carrying
-  # record INSTALLED AT ITS OWN NAME, e.g.
-  # `lib.extend (_: p: { types = p.types // { int = p.types.addCheck p.types.int f; }; })`,
-  # is reflexive, still mints as `int`, and still collapses against the genuine leaf and against a
-  # differently-checked install. That residue predates the conjunct and is filed as
-  # `den-hoag-hc755`. The claim this construction makes is scoped to records NOT bound at
-  # `lib.types.<name>`; silence here would not be a classification (ADR-0034).
-  mintForeign =
-    t:
-    let
-      children = attrValues (t.nestedTypes or { });
-      mintedChildren = map mintForeign children;
-    in
-    if children == [ ] then
-      if elem t.name foreignLeafRegistry && ((t.functor or { }).type or null) == t then
-        {
-          minted = identity.hashIdentity "type" [ "name" "children" ] (
-            l:
-            {
-              name = t.name;
-              children = [ ];
-            }
-            .${l}
-          );
-        }
-      else
-        { sealed = t.name; }
-    else if any (m: m ? sealed) mintedChildren then
-      { sealed = t.name; }
-    else
-      {
-        minted = identity.hashIdentity "type" [ "name" "children" ] (
-          l:
-          {
-            name = t.name;
-            children = map (m: m.minted) mintedChildren;
-          }
-          .${l}
-        );
-      };
 
   # The ONE access discipline over the three identity regimes, and it is TOTAL OVER
   # THOSE THREE REGIMES — not over the two populations of the migration window, which
@@ -170,18 +60,34 @@ let
     else if v ? __mint then
       { inherit (v.__mint) unmintable; }
     else if v ? nestedTypes then
-      # A genuine nixpkgs import (§ "foreign (nixpkgs) type structural identity" above): structural
-      # identity through the recursive mint, never name alone. A record that merely lacks `__mint`
-      # AND `nestedTypes` (the pre-migration population this arm still covers) falls through to the
-      # unchanged name-only branch below.
+      # ★ A FOREIGN RECORD IS COMPARED, NEVER MINTED (`den-hoag-hc755`; ADR-0034's compared limb).
+      # A nixpkgs-protocol record (`nestedTypes` present, no `__mint`) CLAIMS a constructor through
+      # its `name` and `nestedTypes` and DECLARES none, and ADR-0034 decides a regime "by
+      # CONSTRUCTOR at the declaration". Minting it from that claim is a name-only mint at every
+      # node, and it answered `true` for types accepting different values, measured on three
+      # routes: an `addCheck`'d `int` installed at `types.int` by `lib.extend` (reflexive, because
+      # nixpkgs' `functor.type = lib.types.${name}` is a late-bound lookup); a record whose
+      # `functor.type` is itself (gen-merge's `exportType`); and a composite carrying another's
+      # name — stock `nonEmptyListOf str` is named `listOf`, and `addCheck (listOf str) f` shares
+      # every inert datum with a separately built `listOf str`.
       #
-      # ★ A nixpkgs record cannot carry the step-indexed memo, and `mintForeign` is unmemoised
-      # already, so the foreign branch takes a depth-bounded walk over `nestedTypes` first: a cyclic
-      # or over-deep foreign type is sealed rather than overflowing the stack inside the mint.
-      let
-        m = if foreignWithin 0 v then mintForeign v else { sealed = v.name or "<unnamed>"; };
-      in
-      if m ? minted then { inherit (m) minted; } else { unmintable = m.sealed; }
+      # ★ WHY NO NARROWER MINT EXISTS. MINTED needs a preimage TOTAL over the distinguishing content
+      # (ADR-0034 Consequence 1), and a foreign record's distinguishing content includes its
+      # closures' ENVIRONMENT — the lib instance they close over — which has no observable
+      # coordinate. Source positions (`unsafeGetAttrPos`) separate CODE, not environment: `listOf
+      # str` built from `lib.extend (_: _: { isList = _: false; })` has the stock record's check
+      # position, child and name and a different `check [ ]`, and an `mkOptionType { name = "str"; }`
+      # installed at `types.str` is reflexive at the stock positions while accepting other values
+      # (the same ground `den-hoag-t6iy2`/`xxybl` rejected a position discriminator on). A lib's
+      # `version` does not move under `lib.extend`. Structural identity returns only with a
+      # lib-instance revision, or with the type written in gen's own vocabulary: this library's
+      # constructors mint natively, while gen-merge's composites (`listOf`, `attrsOf`, `nullOr`,
+      # `submodule`) carry no `__mint` yet and are compared here like any foreign record.
+      #
+      # The consequence is deliberate: separately built foreign twins, and one leaf across two lib
+      # instances, compare unequal. A record that lacks `__mint` AND `nestedTypes` (the
+      # pre-migration population) falls through to the name-only branch below.
+      { unmintable = v.name or "<unnamed>"; }
     else
       { unmigrated = v.name; };
 
@@ -248,14 +154,15 @@ let
   #      data — `t.port // { foo = t.port; }` against `t.port // { foo = u.port; }`, or a
   #      `functor` grafted from each instance. Sharing every closure slot means sharing the
   #      construction, and a plain `//`-derivation shares its back-edges too and terminates, so
-  #      only a hand graft of cross-instance data reaches this.
+  #      only a hand graft of cross-instance data reaches this. Foreign COMPOSITES reach it too
+  #      since `identityOf` stopped minting them: `let x = listOf str; in x // { foo = t.port; }`
+  #      against `x // { foo = u.port; }` aborts depending on interning order, where the mint
+  #      used to answer.
   #   2. A record carrying NONE of the listed fields as a function: `K` is `{}` on both sides, the
   #      prefix is vacuously equal and the bare `==` decides alone. A producer whose closure fields
   #      carry other names lands here until this list names them.
   # Closing either needs an evaluator-observable value identity — a visited set — which pure Nix
   # does not expose. Same-instance comparisons take the slot shortcut and are unaffected.
-  # `mintForeign`'s reflexivity conjunct is a second record `==` and stays bare: every measured
-  # pair shares the `functor` slot with its own `functor.type`, and no abort through it is known.
   comparisonSubject =
     v:
     let
