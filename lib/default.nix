@@ -8,9 +8,9 @@
 #
 # The handoff contract is the checker record itself — { name; verify; check; __name;
 # __nameWithin; __mint; __id } — so gen-merge calls `t.verify` on a merged leaf value (null = ok, else
-# a blame string) and `t.typeEq` to decide whether two option declarations carry the same
-# type. `typeEq` and not `__id`: deciding is not demanding, and a checker whose content is
-# sealed has an identity to REFUSE but a record to compare.
+# a blame string). `t.typeEq` decides whether two checkers carry the same type — `typeEq` and
+# not `__id`: deciding is not demanding, and a checker whose content is sealed has an identity
+# to REFUSE but a record to compare.
 # gen-types is a self-contained LEAF: it must import WITHOUT any registry above
 # it, which is why it lives in its own flake rather than inside gen-schema.
 #
@@ -24,6 +24,8 @@ let
     elem
     any
     map
+    filter
+    genAttrs
     ;
   inherit (builtins) isAttrs;
   core = import ./checkers.nix { inherit prelude identity; };
@@ -184,7 +186,7 @@ let
       { unmigrated = v.name; };
 
   # The comparison SUBJECT for the sealed arm: the reified record MINUS its two accessors,
-  # `__id` and `__okAt`, and minus nothing else.
+  # `__id` and `__okAt`, and minus nothing else — preceded by its own closure fields (below).
   #
   # ★ `__id` IS AN ACCESSOR, NOT DISTINGUISHING CONTENT, and in the sealed regime that
   # accessor IS the named refusal. Comparing the record without excluding it forces the
@@ -219,30 +221,63 @@ let
   # bottoms out at index 0), so nothing detonates, but it is an accessor rather than distinguishing
   # content, and comparing it would force up to `typeIdentityDepth + 1` cells of each side.
   #
-  # ★ ENUMERATED EXCEPTION TO TOTALITY (ADR-0025 item 1: "enumerated and argued, never silent";
-  # `den-hoag-6xj95`). The `==` this subject feeds is NOT total over FOREIGN records drawn from TWO
-  # DISTINCT nixpkgs lib instances (`lib.extend`, or two nixpkgs inputs). A nixpkgs record's
-  # `functor.type` points back at a leaf record of its own lib, Nix compares attributes in
-  # symbol-interning order, and when `functor` is interned before the first differing attribute
-  # the comparison recurses until the evaluator aborts with an UNCATCHABLE stack overflow. Whether
-  # it aborts or answers `false` therefore depends on what text the evaluator parsed first, on host
-  # Nix, Determinate Nix and Lix alike. The class: ANY cross-instance pair that reaches this arm
-  # may abort. Measured to abort in at least one order: `port`, `ints.between 0 1`, `nonEmptyStr`,
-  # and each registry leaf wrapped by `addCheck` or `//`, which the reflexivity conjunct in
-  # `mintForeign` sends here rather than minting as the leaf. Measured to answer `false` in every
-  # order: `path`, `enum`. This file's own text shifts the order: with the conjunct's `functor`
-  # identifier parsed before nixpkgs' types, cross-instance `port`, `ints.between` and
-  # `nonEmptyStr` go from `false` to an overflow even with no prefix.
-  # Same-instance comparisons are unaffected: a shared `functor` Value takes the pointer shortcut.
-  # Argued: what the conjunct replaced for the `addCheck`/`//` population is a SILENT `true` for
-  # types that accept different values, a name-only mint ADR-0034 rejects, and an abort is loud
-  # where that answer was silent. The repair, breaking the `functor.type` cycle at every depth,
-  # belongs to this binding and is `den-hoag-6xj95`.
+  # ★ CLOSURES FIRST (`den-hoag-6xj95`; ADR-0034's compared limb). The subject is a two-element
+  # list: `K`, the record's declared closure fields that are present as functions, then the whole
+  # record. List `==` decides index 0 before it touches index 1, and `==` on two functions answers
+  # without entering either closure, so a pair whose `K` differs is `false` before any of the
+  # record's own attributes is compared. The order matters for records carrying a BACK-EDGE: a
+  # nixpkgs record's `functor.type` is a late-bound lookup into its own lib, so across two lib
+  # instances (`lib.extend`, or two nixpkgs inputs) attrset `==`, which walks attributes in
+  # symbol-interning order, can reach that edge before the first difference and recurse until the
+  # evaluator aborts with an UNCATCHABLE stack overflow — on host Nix, Determinate Nix and Lix
+  # alike, depending on what text was parsed first. Every nixpkgs `mkOptionType` call builds its
+  # own `typeMerge` closure, and so does gen-merge's, so distinct constructions differ in `K`. `K`
+  # is a sub-attrset of the record holding the same slots: this is still one `==` over a subject
+  # containing the whole reified value, never a component-wise replacement of it.
+  #
+  # THE VALUE, SCOPED. Where the bare record `==` returns a boolean and every listed field present
+  # is total at WHNF, this subject returns the same boolean. Outside that domain the value moves,
+  # both ways: a listed field that throws when forced turns a bare `false` into that throw (the
+  # `isFunction` filter forces it), and a self-referential nixpkgs type compared across two
+  # instances (`let x = either str (listOf x)`) turns `infinite recursion` into `false`.
+  #
+  # ★ ENUMERATED EXCEPTION TO TOTALITY (ADR-0025 item 1: "enumerated and argued, never silent").
+  # The comparison can still abort, uncatchably and depending on interning order, where `K` is
+  # EQUAL and the record's `==` then reaches a back-edge before a difference:
+  #   1. A GRAFT: every closure slot shared, another attribute holding distinct cross-instance
+  #      data — `t.port // { foo = t.port; }` against `t.port // { foo = u.port; }`, or a
+  #      `functor` grafted from each instance. Sharing every closure slot means sharing the
+  #      construction, and a plain `//`-derivation shares its back-edges too and terminates, so
+  #      only a hand graft of cross-instance data reaches this.
+  #   2. A record carrying NONE of the listed fields as a function: `K` is `{}` on both sides, the
+  #      prefix is vacuously equal and the bare `==` decides alone. A producer whose closure fields
+  #      carry other names lands here until this list names them.
+  # Closing either needs an evaluator-observable value identity — a visited set — which pure Nix
+  # does not expose. Same-instance comparisons take the slot shortcut and are unaffected.
+  # `mintForeign`'s reflexivity conjunct is a second record `==` and stays bare: every measured
+  # pair shares the `functor` slot with its own `functor.type`, and no abort through it is known.
   comparisonSubject =
     v:
-    removeAttrs v [
-      "__id"
-      "__okAt"
+    let
+      s = removeAttrs v [
+        "__id"
+        "__okAt"
+      ];
+      # The closure fields declared by every record producer: nixpkgs' and gen-merge's
+      # `mkOptionType`, and this library's `mkChecker`/`mkComposite`.
+      sealedKeys = filter (n: s ? ${n} && builtins.isFunction s.${n}) [
+        "check"
+        "merge"
+        "typeMerge"
+        "getSubOptions"
+        "substSubModules"
+        "verify"
+        "__nameWithin"
+      ];
+    in
+    [
+      (builtins.intersectAttrs (genAttrs sealedKeys (_: null)) s)
+      s
     ];
 
   # CONSERVATIVE EQUALITY — Palmer's own term (§2.3, §5.3); "intensional" qualifies the
@@ -252,9 +287,11 @@ let
   # forbids.
   #
   # Where nothing is minted this compares THE REIFIED RECORD — minus
-  # `comparisonSubject`'s one exclusion — and never a list of components: `check` is a
-  # bare lambda and an attribute selection is an indirection, so a component-wise form
-  # is false even against itself and the relation would be EMPTY rather than finer.
+  # `comparisonSubject`'s accessor exclusion — and never a list of components in its place:
+  # a projection decides only what it projects, and every attribute the record carries is
+  # distinguishing content. (A projection is not false against itself: selecting an attribute
+  # keeps its Value slot, so `comparisonSubject`'s closure prefix is `true` for a record
+  # against itself; it rides AHEAD of the record, never instead of it.)
   # Finer is the safe direction for a type-equality decision — the failure a type
   # discipline exists to exclude is admitting semantically distinct values under one
   # type, i.e. returning TRUE wrongly.
@@ -298,16 +335,17 @@ checkers
 
   # ── conservative equality over checker identity ──
   # Two checkers denote the same type when `conservativeEq` holds of them. The relation
-  # dispatches on the identity REGIME rather than reading a single field, so it is total
-  # over minted, sealed and not-yet-stamped checkers alike; see its definition above for
-  # why the sealed arm compares the whole record and why finer is the safe direction.
+  # dispatches on the identity REGIME rather than reading a single field, so it covers
+  # minted, sealed and not-yet-stamped checkers alike — total but for the sealed arm's
+  # enumerated exception at `comparisonSubject`; see its definition above for why the sealed
+  # arm compares the whole record and why finer is the safe direction.
   #
   # ★ THE EXPORTED NAME MOVES WITH THE RELATION. `conservativeEq` is Palmer's own term (§2.3,
   # §5.3, §8): "intensional" qualifies the FUNCTION and never the equality, and the name it
   # replaces read as a licence to compare intension alone — which is exactly the half of
   # Fig. 5's conjunction the relation used to ship. `typeEq` stays as the domain-facing
-  # spelling, since gen-merge consumes this to decide whether two option declarations carry
-  # the same type and names it the way a type discipline would.
+  # spelling, the name a type discipline gives the decision whether two declarations carry
+  # the same type.
   typeEq = conservativeEq;
   inherit conservativeEq;
 
