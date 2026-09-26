@@ -40,6 +40,21 @@ Entry: `inputs.gen-types.lib` (flake, `flake.nix:16`). Root `default.nix` is a *
 | `override`      | present on `struct` results ONLY (`lib/checkers.nix`, binding `build`)                                                                                                                                                                   |
 | `__refinements` | present on `refined` results ONLY (`lib/refined.nix`, binding `refined` — the trailing `// { __refinements = refs; }`)                                                                                                                   |
 
+**`__` keys crossing the boundary** (R12 stated contracts; the census that reads these lines takes the
+first line of each). The checker record is this library's handoff contract, so its `__` fields are
+read by other libraries off plain data; `__mint`'s contract is gen-algebra's, which authors the sum.
+
+- `__id` — writer `mkChecker` (`lib/checkers.nix`), co-written by gen-schema (`lib/refined.nix`); read by gen-merge, gen-select and gen-schema; excluded by gen-algebra `comparisonSubject`:
+  the identity DEMAND accessor: the minted value, or the mint's own named refusal. Lazy, and never
+  what an equality relation reads (deciding is not demanding).
+- `__name` — writer `mkChecker` (`lib/checkers.nix`), reader the composite checkers (same file); pinned by gen-merge (`ci/tests/nixpkgs-protocol.nix`):
+  the base name with polymorphic metadata stripped (`"listOf"`).
+- `__nameWithin` — writer `mkChecker` (`lib/checkers.nix`), reader the composite checkers (same file); pinned by gen-merge (`ci/tests/nixpkgs-protocol.nix`):
+  `budget -> string`, the name rendered within that many bytes; what a combinator renders a member
+  through, never its `name`.
+- `__okAt` — writer the composite checkers (`lib/checkers.nix`), reader `cellOf` (same file); also written by gen-schema (`lib/refined.nix`):
+  on a composite only, the step-indexed guard over its members that bounds a cyclic type's mint.
+
 **Primitives** — `lib/checkers.nix`. Each is a `checker` value, not a function.
 
 | Export                      | Accepts                                                          |
