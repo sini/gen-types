@@ -385,7 +385,7 @@ over, `{ ctor; args; }` — and it answers only where that payload re-mints to t
 record carries. A sealed checker, a foreign record, and a `//`-derived record carrying its
 base's payload under a digest of its own are refused by name, catchably. The payload is
 read-only and **bears no identity**: `__mint` decides whether two types are one, and `__id`
-answers a demand for an identity (owner ruling on `den-hoag-parametric-merge-unlock-6wb87`).
+answers a demand for an identity.
 A composite's `args` hold its members' identities, never the member checkers. Each read
 re-runs one `hashIdentity` over the preimage.
 
