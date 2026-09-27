@@ -7,7 +7,21 @@
 # resolved a second time.
 { ... }@args:
 let
-  inherit (import ./.. (args // { wire = { deps, resolve }: deps; })) prelude;
+  inherit
+    (import ./.. (
+      args
+      // {
+        wire =
+          {
+            deps,
+            resolve,
+            lock,
+          }:
+          deps;
+      }
+    ))
+    prelude
+    ;
   genTypes = import ./.. args;
 in
 {
