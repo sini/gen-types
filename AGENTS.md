@@ -37,6 +37,7 @@ Entry: `inputs.gen-types.lib` (flake, `flake.nix:16`). Root `default.nix` is a *
 | `__name`        | base name, polymorphic metadata stripped (`"listOf"`)                                                                                                                                                                                    |
 | `__mint`        | the identity REGIME as a tagged sum: `{ minted = "type:<sha256>"; }` or `{ unmintable = { ctor; reason; }; }`. Minted over the CONSTRUCTION — constructor plus inert argument value — and never over `name`. This is what `typeEq` reads |
 | `__id`          | the accessor for a consumer that DEMANDS an identity: the minted value, or the mint's own named refusal. Lazy, and deliberately NOT what the relation reads                                                                              |
+| `__payload`     | the construction the mint hashed, READ-ONLY and NON-IDENTITY-BEARING: `{ minted = { ctor; args; }; }` where `__mint` is minted, `{ unmintable = { ctor; }; }` where not. Read it through `payloadOf`, never raw                          |
 | `override`      | present on `struct` results ONLY (`lib/checkers.nix`, binding `build`)                                                                                                                                                                   |
 | `__refinements` | present on `refined` results ONLY (`lib/refined.nix`, binding `refined` — the trailing `// { __refinements = refs; }`)                                                                                                                   |
 
@@ -54,6 +55,14 @@ read by other libraries off plain data; `__mint`'s contract is gen-algebra's, wh
   through, never its `name`.
 - `__okAt` — writer the composite checkers (`lib/checkers.nix`), reader `cellOf` (same file); also written by gen-schema (`lib/refined.nix`):
   on a composite only, the step-indexed guard over its members that bounds a cyclic type's mint.
+- `__payload` — writer `mkComposite` (`lib/checkers.nix`), reader `payloadOf` (`lib/default.nix`); read through it by gen-merge (`lib/default.nix`, `completeParametric`); pinned by gen-merge (`ci/tests/nixpkgs-protocol.nix`):
+  the mint's own preimage `{ ctor; args; }`, retained READ-ONLY and NON-IDENTITY-BEARING (owner ruling on
+  `den-hoag-parametric-merge-unlock-6wb87`, 2026-08-27): identity stays with `__mint.minted`, and it is
+  never a key. Total and tagged like `__mint` (`minted` | `unmintable`, the sealed arm carrying `ctor`
+  alone), so it joins `comparisonSubject`'s record on the COMPARED regime without detonating, its two
+  arms under different key names. `payloadOf` certifies it by re-minting through the one authority
+  (one `hashIdentity` per read; a fold over N declarations pays 2(N−1)), so a `//`-derived record's
+  stale payload is refused, never answered.
 
 **Primitives** — `lib/checkers.nix`. Each is a `checker` value, not a function.
 
@@ -116,6 +125,7 @@ read by other libraries off plain data; `__mint`'s contract is gen-algebra's, wh
 | Export                      | Signature                                                                                                                                                                                                                       |
 | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `typeEq` / `conservativeEq` | `checker -> checker -> bool` (conservative equality, dispatched on the checker's `__mint` tag; the two are the same function). `conservativeEq` is Palmer's own term — *intensional* qualifies the FUNCTION, never the equality |
+| `payloadOf`                 | `checker -> { ctor; args; }`: the construction payload, only where it re-mints to the record's own digest; any other record (sealed, foreign, `//`-derived) is refused by name, catchably. Read-only; bears no identity         |
 
 ## Entry points by task
 

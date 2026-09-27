@@ -70,6 +70,7 @@ Every constructor returns a record:
   __nameWithin;  # budget -> the name within that many bytes; a combinator reads a member through it
   __mint;  # tagged identity regime: { minted = "type:<sha256>"; } | { unmintable = { ctor; reason; }; }
   __id;    # the accessor for a consumer DEMANDING an identity: the minted value, or a named refusal (lazy)
+  __payload;  # the mint's preimage, read-only, NOT identity: { minted = { ctor; args; }; } | { unmintable = { ctor; }; }
   __okAt;  # composites only: the step-indexed guard bounding type nesting for the mint (see below)
 }
 ```
@@ -377,13 +378,33 @@ r.__id                                              # => throws: a type nests de
                                                     #    type-identity depth bound (128 levels); …
 ```
 
+### Reading a construction back
+
+`payloadOf` reads what a checker was constructed from — the preimage its digest was minted
+over, `{ ctor; args; }` — and it answers only where that payload re-mints to the digest the
+record carries. A sealed checker, a foreign record, and a `//`-derived record carrying its
+base's payload under a digest of its own are refused by name, catchably. The payload is
+read-only and **bears no identity**: `__mint` decides whether two types are one, and `__id`
+answers a demand for an identity (owner ruling on `den-hoag-parametric-merge-unlock-6wb87`).
+A composite's `args` hold its members' identities, never the member checkers. Each read
+re-runs one `hashIdentity` over the preimage.
+
+```nix
+t.payloadOf (t.enum "e" [ "a" ])    # => { ctor = "enum"; args = { name = "e"; elems = [ "a" ]; }; }
+t.payloadOf (t.refined t.int r.positive)                  # => throws: its identity is not minted
+t.payloadOf (t.int // { inherit (t.enum "e" [ "a" ]) __payload; })
+                                    # => throws: its `__payload' is not the preimage of its own digest
+```
+
 ## Handoff to `gen-merge`
 
 The checker record *is* the contract. A merge engine consumes a checker as a leaf's
 option type: after merging definitions it calls `t.verify mergedValue` (`null` = ok,
 else a blame string) and `t.typeEq` to decide whether two option declarations carry the
 same type. **`typeEq`, not `__id`** — deciding is not demanding, and a sealed checker has
-an identity to refuse but a record to compare. gen-types stays free of any merge/priority
+an identity to refuse but a record to compare. Where two declarations differ, gen-merge reads
+both constructions through `payloadOf` to decide whether a reconciliation law applies
+(today: two same-named `enum`s merge to their union). gen-types stays free of any merge/priority
 notion — that lives entirely in the engine above it.
 
 ## Tests

@@ -6,7 +6,7 @@
 # blames the value on mismatch — restricted to a first-order, allocation-frugal
 # core so it stays a single eval pass on the happy path.
 #
-# Every checker is a record { name; verify; check; __name; __nameWithin; __mint; __id; }:
+# Every checker is a record { name; verify; check; __name; __nameWithin; __mint; __id; __payload; }:
 #   name    — full structural name, e.g. "listOf<int>", within `renderBudget` bytes
 #   verify  — value -> null | errString   (null = ok)
 #   check   — v: v2: throws verify's error on failure, returns v2 on success
@@ -19,6 +19,10 @@
 #             is a caller-supplied lambda. This is what the equality relation reads.
 #   __id    — the accessor for a consumer that DEMANDS an identity: the minted value, or
 #             the mint's own named refusal. Lazy, and never what the relation reads.
+#   __payload — the construction the mint hashed, READ-ONLY and NON-IDENTITY-BEARING, as a total
+#             tagged sum: { minted = { ctor; args; }; } where `__mint` is minted,
+#             { unmintable = { ctor; }; } where it is not. Read it through `payloadOf`, which
+#             certifies it against the digest (see `mkComposite`).
 #   __okAt  — on a COMPOSITE only: the step-indexed guard over its members that bounds type
 #             nesting for the mint (see `identityGuard`). A leaf carries none.
 #
@@ -401,6 +405,47 @@ let
       # the equality relation reads, because demanding an identity of a sealed value is a refusal
       # while DECIDING about one is not.
       __id = if guard.ok then mint else guard.refusal;
+
+      # ★ `__payload` IS THE MINT'S OWN PREIMAGE, RETAINED READ-ONLY, AND IT BEARS NO IDENTITY
+      # (owner ruling on den-hoag-parametric-merge-unlock-6wb87, 2026-08-27; design of record
+      # den-ag-design `reports/den-hoag-nqhoa-readsurface-spec-v0.md`). Identity stays with
+      # `__mint.minted`, and `__id` answers every demand for one; a reader treating this field as
+      # identity re-opens the name-vs-structure confusion the construction mint closed. It is
+      # never a key and enters no mint.
+      #
+      # ★ TOTAL AND TAGGED, like `__mint`, and for the same reason: the key is always present and
+      # its value is lazy, so reading the record's key set forces no mint (a regime-dependent key
+      # would, and on a self-referential type that is `identityGuard`'s blackhole). It is decided by
+      # the same `attempt` as `__mint`, so the minted arm holds only what the encoder certified
+      # inert: no lambda, no path, no derivation. The sealed arm carries `ctor` alone and never
+      # `args`, which would hold a caller lambda or `typedef'`'s deliberate throw.
+      #
+      # ★ ON THE COMPARED REGIME THIS FIELD JOINS `comparisonSubject`'s record (lib/default.nix),
+      # which can only make `==` finer, never turn false into true. Its two arms sit under different
+      # key names, the shielding `__mint` uses, so a sealed-against-minted pair decides on the name
+      # set before either value is forced. A `//`-derived record (gen-schema's `refined` re-stamps
+      # `__mint` and keeps this field) can carry a `minted` payload beside a sealed `__mint`; that
+      # payload was certified inert at its base's own mint, so nothing detonates, and `payloadOf`
+      # refuses it because it is not the preimage of the digest the record carries.
+      #
+      # ★ `payloadOf` INVOKES THE ONE MINTING AUTHORITY AND ADDS NONE: it re-runs `hashIdentity`
+      # over this preimage and compares the result with `__mint.minted`, and nothing it computes
+      # escapes that comparison. The cost is one `hashIdentity` per read, bounded by gen-identity's
+      # preimage bounds; a caller folding N declarations pays 2(N−1) re-mints over a growing
+      # argument.
+      __payload =
+        if attempt.success then
+          {
+            minted = {
+              inherit ctor args;
+            };
+          }
+        else
+          {
+            unmintable = {
+              inherit ctor;
+            };
+          };
     }
     // (if memberList == [ ] then { } else { __okAt = guard.okAt; });
 

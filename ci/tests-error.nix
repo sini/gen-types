@@ -51,4 +51,22 @@ in
       msg = "identity: a type nests deeper than the type-identity depth bound \\(128 levels\\); a self-referential type has no identity";
     };
   };
+
+  # `payloadOf` names the record and why it cannot certify: a stale payload carried by `//`
+  flake.testsError.types-payload.test-payloadOf-refusal-names-a-stale-payload = {
+    expr = t.payloadOf (t.int // { inherit (t.enum "e" [ "a" ]) __payload; });
+    expectedError = {
+      type = "ThrownError";
+      msg = "gen-types: payloadOf: `int' has no readable construction payload: its `__payload' is not the preimage of its own digest";
+    };
+  };
+
+  # and a sealed one
+  flake.testsError.types-payload.test-payloadOf-refusal-names-a-sealed-identity = {
+    expr = t.payloadOf (t.typedef' "t" (_: null));
+    expectedError = {
+      type = "ThrownError";
+      msg = "gen-types: payloadOf: `t' has no readable construction payload: its identity is not minted";
+    };
+  };
 }

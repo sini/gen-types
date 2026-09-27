@@ -7,7 +7,7 @@
 # notion whatsoever; the type value is a pure predicate boundary.
 #
 # The handoff contract is the checker record itself — { name; verify; check; __name;
-# __nameWithin; __mint; __id } — so gen-merge calls `t.verify` on a merged leaf value (null = ok, else
+# __nameWithin; __mint; __id; __payload } — so gen-merge calls `t.verify` on a merged leaf value (null = ok, else
 # a blame string). `t.typeEq` decides whether two checkers carry the same type — `typeEq` and
 # not `__id`: deciding is not demanding, and a checker whose content is sealed has an identity
 # to REFUSE but a record to compare.
@@ -255,6 +255,45 @@ checkers
   # the same type.
   typeEq = conservativeEq;
   inherit conservativeEq;
+
+  # ── the construction-payload reader ──
+  # The ONE reader of `__payload` (lib/checkers.nix, `mkComposite`): it answers `{ ctor; args; }`
+  # only where that payload is the PREIMAGE OF THE DIGEST THE RECORD CARRIES, and refuses by name,
+  # catchably, everywhere else — a sealed checker, a foreign record, and a `//`-derived record
+  # carrying its base's payload under a digest of its own. Re-minting ties the payload to the
+  # digest by construction, so no producer's strip list is kept in step by hand; it invokes the
+  # one minting authority and adds none. The answer is read-only and bears no identity: `__mint`
+  # decides identity and `__id` answers a demand for it.
+  payloadOf =
+    t:
+    let
+      p = t.__payload.minted;
+    in
+    if
+      builtins.isAttrs t
+      && t ? __mint
+      && builtins.isAttrs t.__mint
+      && t.__mint ? minted
+      && t ? __payload
+      && builtins.isAttrs t.__payload
+      && t.__payload ? minted
+      && builtins.isAttrs p
+      && p ? ctor
+      && p ? args
+      && identity.hashIdentity "type" [ "ctor" "args" ] (l: p.${l}) == t.__mint.minted
+    then
+      p
+    else
+      throw "gen-types: payloadOf: `${
+        if builtins.isAttrs t && builtins.isString (t.name or null) then t.name else "<unnamed>"
+      }' has no readable construction payload: ${
+        if !(builtins.isAttrs t && t ? __mint && builtins.isAttrs t.__mint && t.__mint ? minted) then
+          "its identity is not minted"
+        else if !(t ? __payload && builtins.isAttrs t.__payload && t.__payload ? minted) then
+          "it carries no minted `__payload'"
+        else
+          "its `__payload' is not the preimage of its own digest"
+      }";
 
   # ── the type-identity guard, for a producer outside this library ──
   # A construct that mints over a member's `__mint` must step the same index or it reopens the
