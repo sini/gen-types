@@ -3,7 +3,11 @@
 let
   t = genTypes;
 
-  positive = t.mkValidator "positive" (i: i.n > 0) "n must be positive";
+  positive = t.mkValidator {
+    name = "positive";
+    pred = i: i.n > 0;
+    message = "n must be positive";
+  };
   instancesOk = {
     a = {
       n = 1;
@@ -26,7 +30,11 @@ in
     # functions are incomparable in Nix, so assert the plain fields + pred behaviour
     expr =
       let
-        v = t.mkValidator "positive" (i: i.n > 0) "msg";
+        v = t.mkValidator {
+          name = "positive";
+          pred = i: i.n > 0;
+          message = "msg";
+        };
       in
       {
         inherit (v) name message;
@@ -83,5 +91,58 @@ in
         ]
       )).success;
     expected = false;
+  };
+
+  # P2 (R7 (a)): the three operands are one required-argument record, a door (`prelude.door`).
+  # A missing field is refused at the application's own WHNF, catchably; an extra field is admitted
+  # (the record is open); the published map is the native formals the door stands for.
+  flake.tests.types-validate.test-mkValidator-door-refuses-a-missing-field-at-application = {
+    expr =
+      (builtins.tryEval (
+        builtins.seq (t.mkValidator {
+          name = "n";
+          pred = _: true;
+        }) null
+      )).success;
+    expected = false;
+  };
+  flake.tests.types-validate.test-mkValidator-door-admits-an-extra-field = {
+    expr =
+      (t.mkValidator {
+        name = "n";
+        pred = _: true;
+        message = "m";
+        extra = 1;
+      }).message;
+    expected = "m";
+  };
+  flake.tests.types-validate.test-mkValidator-door-publishes-its-formals = {
+    expr = [
+      (
+        t.mkValidator.__functionArgs == builtins.functionArgs (
+          {
+            name,
+            pred,
+            message,
+            ...
+          }:
+          null
+        )
+      )
+      t.mkValidator.__contract
+    ];
+    expected = [
+      true
+      {
+        name = "gen-types.mkValidator";
+        required = [
+          "name"
+          "pred"
+          "message"
+        ];
+        optional = [ ];
+        open = true;
+      }
+    ];
   };
 }

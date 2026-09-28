@@ -221,7 +221,11 @@ t.refined t.int [ t.refinements.positive t.refinements.tcpPort ]
 A named predicate contract over a kind's instances, collected into an `Either`:
 
 ```nix
-t.mkValidator "positive" (i: i.n > 0) "n must be positive";
+t.mkValidator {
+  name = "positive";
+  pred = i: i.n > 0;
+  message = "n must be positive";
+};
 t.runValidators "widget" [ v ] instances;   # { right = instances; } | { left = [failure]; }
 t.formatErrors failures;
 t.defaultOnError left;                       # throws a formatted error

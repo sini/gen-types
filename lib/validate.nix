@@ -17,9 +17,24 @@ let
     mapAttrsToList
     ;
 
-  mkValidator = name: pred: message: {
-    inherit name pred message;
-  };
+  # `mkValidator { name; pred; message; }` — three operands with no natural order (P2, R7 (a)): the
+  # name and the message are both strings, and nothing orders a label, a predicate and its failure
+  # text, so they stay one required-argument record. The record is a door (`prelude.door`, open as a
+  # record operand is): a missing field is refused catchably, by name, at this application.
+  mkValidator =
+    prelude.door
+      {
+        name = "gen-types.mkValidator";
+        required = [
+          "name"
+          "pred"
+          "message"
+        ];
+        open = true;
+      }
+      (v: {
+        inherit (v) name pred message;
+      });
 
   runValidators =
     kind: validators: instances:

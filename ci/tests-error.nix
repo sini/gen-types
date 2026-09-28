@@ -69,4 +69,16 @@ in
       msg = "gen-types: payloadOf: `t' has no readable construction payload: its identity is not minted";
     };
   };
+
+  # `mkValidator`'s record door names the missing field and the door (P2, R7 (a))
+  flake.testsError.types-validate.test-mkValidator-missing-field-named = {
+    expr = t.mkValidator {
+      name = "n";
+      pred = _: true;
+    };
+    expectedError = {
+      type = "ThrownError";
+      msg = "gen-types.mkValidator: required field 'message' is missing";
+    };
+  };
 }
