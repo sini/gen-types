@@ -440,7 +440,7 @@ not state. A combinator (`listOf`, `union`, `struct`, …) carries that `check` 
 two-field set the caller must then read or merge, which costs a producer that builds one type per
 declaration a slope per declaration. Such a producer takes the one record from `witnessRecord` and
 publishes it under both fields, `check = r; _checkWitness = r;`; `witnessedCheck`'s output stays the
-layout it is held to (owner ruling on `den-hoag-ydro3`, arm (c)). The two spellings are kept in step
+layout it is held to (owner ruling, 2026-09-30). The two spellings are kept in step
 by the producer's door, not by construction.
 
 **What the ruling left where it is.** gen-merge's `exportType` is the one producer today, and it
