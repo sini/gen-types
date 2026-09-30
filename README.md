@@ -405,8 +405,8 @@ t.payloadOf (t.int // { inherit (t.enum "e" [ "a" ]) __payload; })
 A record can state its domain twice: in `verify`, and in a nixpkgs-protocol `check : v -> bool`.
 A wrapper (nixpkgs `addCheck`, or `// { check = …; }`) rewrites the second and copies every other
 field, `__mint` included, so a reader of the copied identity would take the wrapped type for its
-base. **This library owns the protocol that detects the rewrite** (owner ruling on
-`den-hoag-ydro3`, OQ-A arm (ii), 2026-09-30), and every reader of a type's identity consumes it.
+base. **This library owns the protocol that detects the rewrite** (owner ruling, 2026-09-30, open question A
+arm (ii)), and every reader of a type's identity consumes it.
 
 | export           | signature                                  | role                                                                              |
 | ---------------- | ------------------------------------------ | --------------------------------------------------------------------------------- |
