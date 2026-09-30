@@ -70,6 +70,20 @@ in
     };
   };
 
+  # demanding the identity of a composite over a member whose `check` a wrapper rewrote names the
+  # member and the rewrite (den-hoag-ydro3)
+  flake.testsError.types-added-check.test-idOf-refusal-names-a-rewritten-check = {
+    expr =
+      let
+        own = t.int // t.witnessedCheck (x: t.int.verify x == null);
+      in
+      (t.listOf (own // { check = x: own.check x && x < 3; })).__id;
+    expectedError = {
+      type = "ThrownError";
+      msg = "identity: component type 'int' carries a `check' a wrapper rewrote, and a rewritten check has no mintable identity";
+    };
+  };
+
   # `mkValidator`'s record door names the missing field and the door (P2, R7 (a))
   flake.testsError.types-validate.test-mkValidator-missing-field-named = {
     expr = t.mkValidator {

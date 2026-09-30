@@ -400,6 +400,50 @@ t.payloadOf (t.int // { inherit (t.enum "e" [ "a" ]) __payload; })
                                     # => throws: its `__payload' is not the preimage of its own digest
 ```
 
+### The check-witness protocol
+
+A record can state its domain twice: in `verify`, and in a nixpkgs-protocol `check : v -> bool`.
+A wrapper (nixpkgs `addCheck`, or `// { check = …; }`) rewrites the second and copies every other
+field, `__mint` included, so a reader of the copied identity would take the wrapped type for its
+base. **This library owns the protocol that detects the rewrite** (owner ruling on
+`den-hoag-ydro3`, OQ-A arm (ii), 2026-09-30), and every reader of a type's identity consumes it.
+
+| export           | signature                                  | role                                                                              |
+| ---------------- | ------------------------------------------ | --------------------------------------------------------------------------------- |
+| `witnessedCheck` | `(v -> bool) -> { check; _checkWitness; }` | the one constructor: a producer merges it into its record                         |
+| `rewritesCheck`  | `any -> bool`                              | the one test: `true` exactly where the published `check` is no longer the witness |
+
+`witnessedCheck fn` binds one functor record `{ __functor; _fn = fn; }` and publishes it twice, as
+`check` and as `_checkWitness`, so the test compares one binding against itself and allocates
+nothing. The record is callable: `lib.isFunction` holds of it and `builtins.isFunction` does not.
+**`_checkWitness` and `_fn` are protocol fields of this library**: a producer never spells them, a
+reader never compares them, and both go through the two exports. `rewritesCheck` is total over
+records whose `check` reaches weak head normal form: a non-attrset, a record with no witness, and
+`{ }` all answer `false`. A `check` that throws when forced throws here too.
+
+```nix
+let w = t.witnessedCheck (x: x > 0); own = t.int // w; in
+t.rewritesCheck own                                  # => false
+t.rewritesCheck (own // { check = _: true; })        # => true
+t.rewritesCheck (own // { inherit (own) check; })    # => false  (re-selection is not a rewrite)
+t.rewritesCheck t.int                                # => false  (no witness)
+```
+
+Where the test holds, this library's readers treat the record as carrying a check its identity does
+not state. A combinator (`listOf`, `union`, `struct`, …) carries that `check` beside the member's
+`verify`, `idOf` refuses the member by name, so a composite over it takes the unmintable regime,
+`identityOf` answers `unmintable`, and `payloadOf` refuses it.
+
+**What the ruling left where it is.** gen-merge's `exportType` is the one producer today. Four
+per-fold sites in gen-merge restate the test inline for cost rather than call it, each commented as
+the protocol's test, and a construction-time agreement door refuses by name when those copies and
+this export disagree. Both are part of the arm as ruled, and both are gen-merge's to carry.
+
+**Residue (R1).** A bare checker of this library carries no witness, so `// { check = …; }` over
+one is not detected: its `check` is this library's derived assertion `v: v2: …`, not a domain
+predicate, and nixpkgs `addCheck` cannot build one (it aborts at `merge`). Only a hand `//` over a
+derived field reaches it.
+
 ## Handoff to `gen-merge`
 
 The checker record *is* the contract. A merge engine consumes a checker as a leaf's
@@ -425,8 +469,9 @@ $ cd ci && nix-unit --flake .#testsError        # unguarded
 and `nix flake check ./ci` are unguarded: they read a git-filtered copy of the tree, so an untracked
 cell is silently absent and the run stays green.
 
-171 nix-unit assertions across primitives, polymorphic combinators, structs, refined,
-validators, strict, identity, the `check` contract, refusal rendering, and the purity invariant — every
+207 nix-unit cells on `tests` and 9 on `testsError` across primitives, polymorphic combinators,
+structs, refined, validators, strict, identity, the `check` contract, the check-witness protocol,
+refusal rendering, and the purity invariant — every
 checker with success (`null`) and failure (exact error string) cases, plus nested and
 recursive types. The purity test walks `lib/` and fails CI on any `nixpkgs.lib`/
 module-system token; it proves it has teeth against an injected violation.

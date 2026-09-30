@@ -29,6 +29,8 @@ let
     mkComposite
     identityGuard
     verifiersOf
+    rewritesCheck
+    witnessedCheck
     renderNode
     ;
   refinedLib = import ./refined.nix { inherit prelude; };
@@ -55,7 +57,11 @@ let
   #                the shipped one — `__id` was a pure function of `name`.
   identityOf =
     v:
-    if v ? __mint && v.__mint ? minted then
+    # a record whose `check` a wrapper rewrote keeps its base's `__mint`, which no longer states
+    # its domain: it is compared, never minted (den-hoag-ydro3)
+    if rewritesCheck v then
+      { unmintable = v.name or "<unnamed>"; }
+    else if v ? __mint && v.__mint ? minted then
       { inherit (v.__mint) minted; }
     else if v ? __mint then
       { inherit (v.__mint) unmintable; }
@@ -274,6 +280,7 @@ checkers
       && t ? __mint
       && builtins.isAttrs t.__mint
       && t.__mint ? minted
+      && !(rewritesCheck t)
       && t ? __payload
       && builtins.isAttrs t.__payload
       && t.__payload ? minted
@@ -289,6 +296,8 @@ checkers
       }' has no readable construction payload: ${
         if !(builtins.isAttrs t && t ? __mint && builtins.isAttrs t.__mint && t.__mint ? minted) then
           "its identity is not minted"
+        else if rewritesCheck t then
+          "a wrapper rewrote its `check', so the construction its `__mint' names is its base's, not its own"
         else if !(t ? __payload && builtins.isAttrs t.__payload && t.__payload ? minted) then
           "it carries no minted `__payload'"
         else
@@ -300,4 +309,7 @@ checkers
   # blackhole a self-referential type closes (see `identityGuard` in `./checkers.nix`); gen-schema's
   # `refined` is the one such producer. Exported so the bound and its refusal stay single-sourced.
   inherit identityGuard;
+
+  # ── the check-witness protocol (den-hoag-ydro3, OQ-A arm ii) ──
+  inherit rewritesCheck witnessedCheck;
 }

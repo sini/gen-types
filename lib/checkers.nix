@@ -462,8 +462,11 @@ let
   # and refuses.
   idOf =
     t:
-    t.__mint.minted
-      or (throw "identity: component type '${memberName "identity" t}' has no mintable identity");
+    if rewritesCheck t then
+      throw "identity: component type '${memberName "identity" t}' carries a `check' a wrapper rewrote, and a rewritten check has no mintable identity"
+    else
+      t.__mint.minted
+        or (throw "identity: component type '${memberName "identity" t}' has no mintable identity");
 
   # ★ A NAME THAT IS NOT A STRING REFUSES BY NAME WHERE IT IS READ. Every combinator renders a
   # member that carries no `__nameWithin` from its `name`, and four constructors (`typedef`, `typedef'`, `enum`,
@@ -492,6 +495,51 @@ let
       name
     else
       throw "gen-types: ${ctor}: the type's name must be a string, but it is of type '${typeOf name}'";
+
+  # ── THE CHECK-WITNESS PROTOCOL (den-hoag-ydro3). This library owns it: a producer builds the
+  # pair with `witnessedCheck`, a reader asks `rewritesCheck`, and neither spells the layout.
+  #
+  # A member whose published `check` a wrapper rewrote. A producer publishes its `check` beside
+  # `_checkWitness`, which holds the same value, so a nixpkgs `addCheck` or `// { check = ...; }`
+  # over it is the one record whose `check` no longer holds the witness. Total over records whose
+  # `check` reaches WHNF: a record with no witness (this library's own checkers) answers `false`.
+  rewritesCheck = t: t ? _checkWitness && t ? check && t.check != t._checkWitness;
+
+  # The nixpkgs-protocol `check` a producer publishes over a domain `fn`, with its witness: one
+  # functor record `{ __functor; _fn; }` bound once and published twice, so `rewritesCheck`
+  # compares one set of bindings by the pointers of its slots and allocates nothing per test.
+  checkApplies = self: self._fn;
+  witnessedCheck =
+    fn:
+    let
+      check = {
+        __functor = checkApplies;
+        _fn = fn;
+      };
+    in
+    {
+      inherit check;
+      _checkWitness = check;
+    };
+
+  # A member read as a VERIFIER: its `verify`, and, where a wrapper rewrote its `check`, that check
+  # too, since the record then states its domain twice and the rewrite is a refinement of it.
+  # Decided once per member, when the combinator binds it, never per value.
+  verifierOf =
+    ctor: t:
+    if rewritesCheck t then
+      v:
+      let
+        e = t.verify v;
+      in
+      if e != null then
+        e
+      else if t.check v then
+        null
+      else
+        "value ${toPretty v} is outside the `check' a wrapper stated over '${memberName ctor t}' (`addCheck', or `// { check = ...; }'), which ${ctor} carries"
+    else
+      t.verify;
 
   # A combinator's members, read as VERIFIERS. A member that is not a checker (no `verify`: a
   # merge strategy, which carries `admits` instead, or a non-attrset) refuses the combinator BY
@@ -522,7 +570,7 @@ let
           "<unnamed>";
     in
     if bad == [ ] then
-      map (t: t.verify) ts
+      map (verifierOf ctor) ts
     else
       throw "gen-types: ${ctor}: member '${nm (head bad)}' is not a checker (it carries no `verify`); ${ctor} composes value predicates, and a merge strategy is not one";
 
@@ -769,12 +817,13 @@ let
               attr:
               let
                 mt = members.${attr};
+                mv = verifierOf "struct '${name}'" mt;
                 mctx = "in member '${attr}'";
                 isOpt = mt.__name == "optionalAttr";
               in
               v:
               if v ? ${attr} then
-                addContext mctx (mt.verify v.${attr})
+                addContext mctx (mv v.${attr})
               else if total && !isOpt then
                 "missing member '${attr}'"
               else
@@ -833,6 +882,8 @@ in
     identityGuard
     idOf
     verifiersOf
+    rewritesCheck
+    witnessedCheck
     renderNode
     typeIdentityDepth
     ;
