@@ -410,14 +410,16 @@ arm (ii)), and every reader of a type's identity consumes it.
 
 | export           | signature                                  | role                                                                              |
 | ---------------- | ------------------------------------------ | --------------------------------------------------------------------------------- |
-| `witnessedCheck` | `(v -> bool) -> { check; _checkWitness; }` | the one constructor: a producer merges it into its record                         |
+| `witnessedCheck` | `(v -> bool) -> { check; _checkWitness; }` | the constructor: a producer merges it into its record                             |
+| `witnessRecord`  | `(v -> bool) -> check`                     | the one record `witnessedCheck` publishes twice, for a producer that publishes it |
 | `rewritesCheck`  | `any -> bool`                              | the one test: `true` exactly where the published `check` is no longer the witness |
 
 `witnessedCheck fn` binds one functor record `{ __functor; _fn = fn; }` and publishes it twice, as
 `check` and as `_checkWitness`, so the test compares one binding against itself and allocates
 nothing. The record is callable: `lib.isFunction` holds of it and `builtins.isFunction` does not.
-**`_checkWitness` and `_fn` are protocol fields of this library**: a producer never spells them, a
-reader never compares them, and both go through the two exports. `rewritesCheck` is total over
+**`_checkWitness` and `_fn` are protocol fields of this library**: a reader never compares them and
+goes through `rewritesCheck`, and a producer spells `_checkWitness` only to publish `witnessRecord`'s
+record (below). `rewritesCheck` is total over
 records whose `check` reaches weak head normal form: a non-attrset, a record with no witness, and
 `{ }` all answer `false`. A `check` that throws when forced throws here too.
 
@@ -434,7 +436,15 @@ not state. A combinator (`listOf`, `union`, `struct`, …) carries that `check` 
 `verify`, `idOf` refuses the member by name, so a composite over it takes the unmintable regime,
 `identityOf` answers `unmintable`, and `payloadOf` refuses it.
 
-**What the ruling left where it is.** gen-merge's `exportType` is the one producer today. Four
+**A producer that publishes the pair itself.** Every call to `witnessedCheck` returns a fresh
+two-field set the caller must then read or merge, which costs a producer that builds one type per
+declaration a slope per declaration. Such a producer takes the one record from `witnessRecord` and
+publishes it under both fields, `check = r; _checkWitness = r;`; `witnessedCheck`'s output stays the
+layout it is held to (owner ruling on `den-hoag-ydro3`, arm (c)). The two spellings are kept in step
+by the producer's door, not by construction.
+
+**What the ruling left where it is.** gen-merge's `exportType` is the one producer today, and it
+publishes `witnessRecord`'s record itself, held to `witnessedCheck`'s output by its door. Four
 per-fold sites in gen-merge restate the test inline for cost rather than call it, each commented as
 the protocol's test, and a construction-time agreement door refuses by name when those copies and
 this export disagree. Both are part of the arm as ruled, and both are gen-merge's to carry.

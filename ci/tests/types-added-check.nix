@@ -57,7 +57,8 @@ in
     };
   };
 
-  # the published surface, pinned: the protocol adds exactly `rewritesCheck` and `witnessedCheck`
+  # the published surface, pinned: the protocol adds exactly `rewritesCheck`, `witnessedCheck` and
+  # `witnessRecord`
   flake.tests.types-added-check.test-lib-surface = {
     expr = builtins.attrNames t;
     expected = [
@@ -99,8 +100,49 @@ in
       "typedef"
       "typedef'"
       "union"
+      "witnessRecord"
       "witnessedCheck"
     ];
+  };
+
+  # `witnessRecord`: the one record `witnessedCheck` publishes twice. A caller publishing it under
+  # both fields itself builds `witnessedCheck`'s layout, and the test reads that pair as it reads
+  # `witnessedCheck`'s. RED if the record's shape moves away from the pair's.
+  flake.tests.types-added-check.test-witness-record = {
+    expr =
+      let
+        r = t.witnessRecord (x: x > 0);
+        spelled = t.int // {
+          check = r;
+          _checkWitness = r;
+        };
+        built = t.witnessedCheck (x: x > 0);
+      in
+      {
+        fields = builtins.attrNames built;
+        recordShape = builtins.attrNames r == builtins.attrNames built.check;
+        applies = r 3;
+        refuses = r (-1);
+        isFunction = lib.isFunction r;
+        builtinsIsFunction = builtins.isFunction r;
+        own = t.rewritesCheck spelled;
+        overwrite = t.rewritesCheck (spelled // { check = _: true; });
+        reselect = t.rewritesCheck (spelled // { inherit (spelled) check; });
+      };
+    expected = {
+      fields = [
+        "_checkWitness"
+        "check"
+      ];
+      recordShape = true;
+      applies = true;
+      refuses = false;
+      isFunction = true;
+      builtinsIsFunction = false;
+      own = false;
+      overwrite = true;
+      reselect = false;
+    };
   };
 
   # the README's example, verbatim in meaning

@@ -497,7 +497,10 @@ let
       throw "gen-types: ${ctor}: the type's name must be a string, but it is of type '${typeOf name}'";
 
   # ── THE CHECK-WITNESS PROTOCOL (den-hoag-ydro3). This library owns it: a producer builds the
-  # pair with `witnessedCheck`, a reader asks `rewritesCheck`, and neither spells the layout.
+  # pair with `witnessedCheck`, a reader asks `rewritesCheck`. A producer on a per-construction
+  # cost budget may take the one record from `witnessRecord` and publish it under both fields
+  # itself; `witnessedCheck`'s output is then the layout it is held to (owner ruling on
+  # den-hoag-ydro3, arm (c)).
   #
   # A member whose published `check` a wrapper rewrote. A producer publishes its `check` beside
   # `_checkWitness`, which holds the same value, so a nixpkgs `addCheck` or `// { check = ...; }`
@@ -509,13 +512,15 @@ let
   # functor record `{ __functor; _fn; }` bound once and published twice, so `rewritesCheck`
   # compares one set of bindings by the pointers of its slots and allocates nothing per test.
   checkApplies = self: self._fn;
+  # The one record alone: what `witnessedCheck` publishes under both fields.
+  witnessRecord = fn: {
+    __functor = checkApplies;
+    _fn = fn;
+  };
   witnessedCheck =
     fn:
     let
-      check = {
-        __functor = checkApplies;
-        _fn = fn;
-      };
+      check = witnessRecord fn;
     in
     {
       inherit check;
@@ -884,6 +889,7 @@ in
     verifiersOf
     rewritesCheck
     witnessedCheck
+    witnessRecord
     renderNode
     typeIdentityDepth
     ;

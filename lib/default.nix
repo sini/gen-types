@@ -31,6 +31,7 @@ let
     verifiersOf
     rewritesCheck
     witnessedCheck
+    witnessRecord
     renderNode
     ;
   refinedLib = import ./refined.nix { inherit prelude; };
@@ -311,5 +312,5 @@ checkers
   inherit identityGuard;
 
   # ── the check-witness protocol (den-hoag-ydro3, OQ-A arm ii) ──
-  inherit rewritesCheck witnessedCheck;
+  inherit rewritesCheck witnessedCheck witnessRecord;
 }

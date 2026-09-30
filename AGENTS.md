@@ -128,14 +128,15 @@ read by other libraries off plain data; `__mint`'s contract is gen-algebra's, wh
 | `payloadOf`                 | `checker -> { ctor; args; }`: the construction payload, only where it re-mints to the record's own digest; any other record (sealed, foreign, `//`-derived) is refused by name, catchably. Read-only; bears no identity         |
 | `identityGuard`             | the step-indexed type-nesting guard a composite producer outside `lib/` builds `__okAt` with (gen-schema's `refined`), so the bound and its refusal stay single-sourced                                                         |
 
-**Check-witness protocol** — `lib/checkers.nix`, exported from `lib/default.nix`. gen-types OWNS it (owner ruling on `den-hoag-ydro3`, OQ-A arm (ii)); a producer builds the pair with `witnessedCheck`, a reader asks `rewritesCheck`, and neither spells the layout. See README, *The check-witness protocol*.
+**Check-witness protocol** — `lib/checkers.nix`, exported from `lib/default.nix`. gen-types OWNS it (owner ruling on `den-hoag-ydro3`, OQ-A arm (ii)); a producer builds the pair with `witnessedCheck` (or publishes `witnessRecord`'s one record under both fields itself, held to `witnessedCheck`'s output by its own door: arm (c)), and a reader asks `rewritesCheck` and never spells the test. See README, *The check-witness protocol*.
 
-| Export           | Signature                                                                                                                                                                                                                         |
-| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `witnessedCheck` | `(v -> bool) -> { check; _checkWitness; }`: one functor record `{ __functor; _fn; }` published twice. Callable: `lib.isFunction` true, `builtins.isFunction` false. The one constructor; gen-merge's `exportType` is its producer |
-| `rewritesCheck`  | `any -> bool`: `true` exactly where a record's `check` is no longer its `_checkWitness` (a nixpkgs `addCheck` or `// { check = …; }` over a witnessed record). Total over records whose `check` reaches WHNF                      |
+| Export           | Signature                                                                                                                                                                                                                                      |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `witnessedCheck` | `(v -> bool) -> { check; _checkWitness; }`: one functor record `{ __functor; _fn; }` published twice. Callable: `lib.isFunction` true, `builtins.isFunction` false. The canonical layout; a producer that spells the pair itself is held to it |
+| `witnessRecord`  | `(v -> bool) -> check`: the one functor record `witnessedCheck` publishes twice, for a producer that publishes it under both fields itself (arm (c)); `witnessedCheck`'s output is the layout that producer is held to                         |
+| `rewritesCheck`  | `any -> bool`: `true` exactly where a record's `check` is no longer its `_checkWitness` (a nixpkgs `addCheck` or `// { check = …; }` over a witnessed record). Total over records whose `check` reaches WHNF                                   |
 
-`_checkWitness` and `_fn` are this protocol's fields, never spelled outside `lib/checkers.nix`. Where `rewritesCheck` holds, `verifiersOf`, `struct`'s member read, `idOf`, `identityOf` and `payloadOf` read the record as carrying a check its identity does not state: the combinator carries the check, the composite is unmintable, and `payloadOf` refuses. Residue R1: a bare gen-types checker carries no witness, so a hand `// { check = …; }` over one is not detected.
+`_checkWitness` and `_fn` are this protocol's fields; `_fn` is never spelled outside `lib/checkers.nix`, and `_checkWitness` only by a producer publishing `witnessRecord`'s record. Where `rewritesCheck` holds, `verifiersOf`, `struct`'s member read, `idOf`, `identityOf` and `payloadOf` read the record as carrying a check its identity does not state: the combinator carries the check, the composite is unmintable, and `payloadOf` refuses. Residue R1: a bare gen-types checker carries no witness, so a hand `// { check = …; }` over one is not detected.
 
 ## Entry points by task
 
@@ -211,7 +212,7 @@ nix eval --json .#lib --apply 'l: { top = builtins.attrNames l; refinements = bu
 Current output (verbatim):
 
 ```json
-{"refinements":["nonEmpty","positive","tcpPort"],"top":["any","attrs","attrsOf","bool","conservativeEq","defaultOnError","derivation","enum","float","formatErrors","function","identityGuard","int","intersection","list","listOf","mkValidator","never","null","number","option","optionalAttr","path","pathLike","payloadOf","refined","refinements","rewritesCheck","runValidators","str","strict","string","struct","tuple","typeEq","typedef","typedef'","union","witnessedCheck"]}
+{"refinements":["nonEmpty","positive","tcpPort"],"top":["any","attrs","attrsOf","bool","conservativeEq","defaultOnError","derivation","enum","float","formatErrors","function","identityGuard","int","intersection","list","listOf","mkValidator","never","null","number","option","optionalAttr","path","pathLike","payloadOf","refined","refinements","rewritesCheck","runValidators","str","strict","string","struct","tuple","typeEq","typedef","typedef'","union","witnessRecord","witnessedCheck"]}
 ```
 
 `refinements` is the only nested namespace of exports on `lib` (nullary checker records are attrsets too; an `isAttrs` sweep returns 16 names). `override` and `__refinements` are fields of returned checker VALUES, not exports, so they do not appear above.
