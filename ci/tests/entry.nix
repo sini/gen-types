@@ -129,7 +129,25 @@ let
   # so nothing on this library's OWN lock distinguishes the fold from the `lock.nodes.<label>`
   # shortcut — it is the fixture below that drives the SHIM's binding: with that shortcut written
   # into `default.nix`'s `resolve`, the control below reds.
-  repoOf = lock: segs: lock.nodes.${shimResolve lock segs}.locked.repo;
+  #
+  # ★ THE REPOSITORY OF A NODE IS READ BY gen-harness `ci-self-input.nix`'s RULE, inlined because the
+  # harness exports no helper for it: a `github`/`gitlab`/`sourcehut` node names it in `locked.repo`,
+  # and a `git` node, which is what every `git+file` override of a dependency locks to, names it only
+  # as the last segment of `locked.url` with `.git` stripped. Any other type names no repository and
+  # reads `null`, which the cell reports as a mismatch rather than throwing.
+  repoOf =
+    lock: segs:
+    let
+      l = lock.nodes.${shimResolve lock segs}.locked;
+      seg = builtins.elemAt (builtins.match "(.*/)?([^/]*)" (l.url or "")) 1;
+      bare = builtins.match "(.*)[.]git" seg;
+    in
+    if l ? repo then
+      l.repo
+    else if (l.type or "") == "git" && l ? url then
+      (if bare == null then seg else builtins.head bare)
+    else
+      null;
 
   # ★ THE FIXTURE LOCK, AND IT IS TWO CLAIMS IN ONE SHAPE. `root → a` is a DIRECT edge, where the
   # value IS the node key; `a-node → b` is a `follows` PATH resolved from the lock's own root — so
