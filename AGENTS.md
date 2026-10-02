@@ -66,18 +66,19 @@ read by other libraries off plain data; `__mint`'s contract is gen-algebra's, wh
 
 **Primitives** — `lib/checkers.nix`. Each is a `checker` value, not a function.
 
-| Export                      | Accepts                                                          |
-| --------------------------- | ---------------------------------------------------------------- |
-| `string` / `str`            | `isString` (`str` is a definitional alias; both name `"string"`) |
-| `int`, `bool`, `float`      | `builtins.is{Int,Bool,Float}`                                    |
-| `number`                    | int or float                                                     |
-| `path`                      | `isPath`                                                         |
-| `pathLike`                  | path, derivation, or string                                      |
-| `attrs`, `list`, `function` | `isAttrs` / `isList` / `isFunction`                              |
-| `derivation`                | attrset with `type == "derivation"`                              |
-| `null`                      | `v == null`                                                      |
-| `any`                       | everything                                                       |
-| `never`                     | nothing                                                          |
+| Export                 | Accepts                                                                                                |
+| ---------------------- | ------------------------------------------------------------------------------------------------------ |
+| `string` / `str`       | `isString` (`str` is a definitional alias; both name `"string"`)                                       |
+| `int`, `bool`, `float` | `builtins.is{Int,Bool,Float}`                                                                          |
+| `number`               | int or float                                                                                           |
+| `path`                 | `isPath`                                                                                               |
+| `pathLike`             | path, derivation, or string                                                                            |
+| `attrs`, `list`        | `isAttrs` / `isList`                                                                                   |
+| `function`             | nixpkgs' `lib.isFunction` (gen-prelude's): a lambda, or a functor whose `__functor` returns a function |
+| `derivation`           | attrset with `type == "derivation"`                                                                    |
+| `null`                 | `v == null`                                                                                            |
+| `any`                  | everything                                                                                             |
+| `never`                | nothing                                                                                                |
 
 **Polymorphic combinators** — `lib/checkers.nix`
 

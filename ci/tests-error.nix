@@ -95,4 +95,20 @@ in
       msg = "gen-types.mkValidator: required field 'message' is missing";
     };
   };
+
+  # a functor whose `__functor` throws propagates its own error through `function`, so a union
+  # with a `function` member throws rather than serving the `attrs` member, as nixpkgs'
+  # `either (functionTo raw) attrs` does (den-hoag-b5qdr)
+  flake.testsError.types-function.test-throwing-functor-propagates-through-union = {
+    expr =
+      (t.union [
+        t.function
+        t.attrs
+      ]).verify
+        { __functor = _: throw "b5qdr: the functor's own error"; };
+    expectedError = {
+      type = "ThrownError";
+      msg = "b5qdr: the functor's own error";
+    };
+  };
 }
