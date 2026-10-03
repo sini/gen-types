@@ -265,7 +265,8 @@ observable names that instance: source positions name the code, not the environm
 lib's `version` does not move under `lib.extend`. The price is that separately built foreign
 twins, and one leaf across two lib instances, compare unequal. A type that needs structural
 identity is written with this library's constructors, which mint natively. gen-merge's
-composites carry no `__mint` yet, so they are compared like any foreign record.
+composites mint too, through `mkIdentity`, under the constructor names `gen-merge.<name>`, so
+gen-merge's `listOf int` and this library's `listOf int` are two types.
 
 One limit applies: **a hand-grafted comparison across two nixpkgs lib instances can abort.**
 When two records share every closure field and differ only in grafted cross-instance data

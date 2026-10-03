@@ -92,8 +92,9 @@ let
       # (the same ground `den-hoag-t6iy2`/`xxybl` rejected a position discriminator on). A lib's
       # `version` does not move under `lib.extend`. Structural identity returns only with a
       # lib-instance revision, or with the type written in gen's own vocabulary: this library's
-      # constructors mint natively, while gen-merge's composites (`listOf`, `attrsOf`, `nullOr`,
-      # `submodule`) carry no `__mint` yet and are compared here like any foreign record.
+      # constructors mint natively, and so do gen-merge's composites (`listOf`, `attrsOf`, `nullOr`,
+      # `either`, `submodule`, `deriveType`), through this library's `mkIdentity`, under the
+      # constructor names `gen-merge.<name>`.
       #
       # The consequence is deliberate: separately built foreign twins, and one leaf across two lib
       # instances, compare unequal. A record that lacks `__mint` AND `nestedTypes` (the
