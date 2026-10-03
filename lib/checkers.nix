@@ -612,6 +612,56 @@ let
     }
     // (if memberList == [ ] then { } else { __okAt = guard.okAt; });
 
+  # ★ THE COMPLETION STAMP (gate C3; den-hoag-1a4f6's construction for kinds, applied to types). A
+  # type's mark is a claim about THE RECORD ITS CONSTRUCTOR COMPLETED, and Nix `//` copies every slot it
+  # does not override, the mark included, so `int // { verify = _: null; }` kept `int`'s mark while
+  # admitting every value. The completed record is closed over itself: `__typeSelf` returns it, a `//`
+  # copies the witness unchanged, so the copy's witness still returns the original (Bracha & Cook 1990
+  # §2: an extension applied after the fixpoint does not re-tie self), and `stampOk` compares the two
+  # (gen-schema's `stampAgrees`, cell-wise where `==` throws). Whatever COMPLETES a record ties the
+  # stamp: these constructors at construction, and gen-merge's protocol boundary, which rebuilds the
+  # record, re-ties it. `typeEq` refuses a record failing it by name. The witness is a function, never
+  # the record, so no walker meets a cycle. PRICE, stated: a description-only `//`, the nixpkgs idiom
+  # `t // { description = …; }`, is a copy too and is refused at `typeEq` like any other.
+  completedType =
+    r:
+    let
+      s = r // {
+        __typeSelf = _: s;
+      };
+    in
+    s;
+  stampAgrees =
+    let
+      defined = v: (builtins.tryEval (builtins.seq v true)).success;
+      cellAgrees =
+        ca: cb: va: vb:
+        let
+          r = builtins.tryEval (ca == cb);
+          da = defined va;
+          db = defined vb;
+        in
+        if r.success then
+          r.value
+        else if da && db then
+          descend va vb
+        else
+          !da && !db;
+      descend =
+        a: b:
+        if builtins.isAttrs a && builtins.isAttrs b then
+          let
+            names = builtins.attrNames a;
+            slice = n: builtins.intersectAttrs { ${n} = null; };
+          in
+          names == builtins.attrNames b
+          && builtins.all (n: cellAgrees (slice n a) (slice n b) a.${n} b.${n}) names
+        else
+          false;
+    in
+    a: b: cellAgrees a b a b;
+  stampOk =
+    t: !(isAttrs t && t ? __typeSelf) || (isFunction t.__typeSelf && stampAgrees (t.__typeSelf null) t);
   mkComposite =
     ctor: members: mkArgs:
     mkCompositeSealed ctor members mkArgs [ ];
@@ -622,18 +672,20 @@ let
       name = if isFunction name0 then name0 nameBudget else name0;
       within = if isFunction name0 then name0 else leafWithin name0;
     in
-    {
-      inherit name verify;
-      __nameWithin = within;
-      check =
-        v: v2:
-        let
-          e = verify v;
-        in
-        if e == null then v2 else throw e;
-      __name = baseName name;
-    }
-    // mkIdentity ctor members mkArgs sealed name;
+    completedType (
+      {
+        inherit name verify;
+        __nameWithin = within;
+        check =
+          v: v2:
+          let
+            e = verify v;
+          in
+          if e == null then v2 else throw e;
+        __name = baseName name;
+      }
+      // mkIdentity ctor members mkArgs sealed name
+    );
 
   # ★ A MEMBER ENTERS THE PREIMAGE AS ITS IDENTITY, AND THAT IS WHAT KEEPS TYPE NESTING OFF THE
   # ENCODER'S BOUNDS. An identity is a fixed 69 characters whatever it stands for, so a composite's
@@ -1060,14 +1112,16 @@ let
           # `sealedMarker` in its place, and carries the lambda in `__sealed`. The limb is per
           # COMPONENT rather than per constructor, which is what stops one struct's extra invariant
           # from dragging every struct onto the comparison limb.
-          mkCompositeSealed "struct" members (ids: {
-            inherit name total unknown;
-            verify = if verify == null then null else algebra.sealedMarker;
-            members = ids;
-          }) (optional (verify != null) (sealedArg [ "verify" ] verify)) name verify'
-          // {
-            override = delta: build ({ inherit total unknown verify; } // delta);
-          };
+          completedType (
+            mkCompositeSealed "struct" members (ids: {
+              inherit name total unknown;
+              verify = if verify == null then null else algebra.sealedMarker;
+              members = ids;
+            }) (optional (verify != null) (sealedArg [ "verify" ] verify)) name verify'
+            // {
+              override = delta: build ({ inherit total unknown verify; } // delta);
+            }
+          );
       in
       seq name (build { });
   });
@@ -1085,6 +1139,8 @@ in
     mkComposite
     mkCompositeSealed
     mkIdentity
+    completedType
+    stampOk
     identityGuard
     comparisonSubject
     verifiersOf

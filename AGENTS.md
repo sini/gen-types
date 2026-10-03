@@ -220,7 +220,7 @@ nix eval --json .#lib --apply 'l: { top = builtins.attrNames l; refinements = bu
 Current output (verbatim):
 
 ```json
-{"refinements":["nonEmpty","positive","tcpPort"],"top":["any","attrs","attrsOf","bool","comparisonSubject","conservativeEq","defaultOnError","derivation","enum","float","formatErrors","function","identityGuard","int","intersection","list","listOf","mkIdentity","mkValidator","never","null","number","option","optionalAttr","path","pathLike","payloadOf","refined","refinements","rewritesCheck","runValidators","str","strict","string","struct","tuple","typeEq","typedef","typedef'","union","witnessRecord","witnessedCheck"]}
+{"refinements":["nonEmpty","positive","tcpPort"],"top":["any","attrs","attrsOf","bool","comparisonSubject","conservativeEq","defaultOnError","derivation","enum","float","formatErrors","function","identityGuard","int","intersection","list","listOf","mkIdentity","mkValidator","never","null","number","option","optionalAttr","path","pathLike","payloadOf","refined","refinements","rewritesCheck","runValidators","stampOk","str","strict","string","struct","tuple","typeEq","typedef","typedef'","union","witnessRecord","witnessedCheck"]}
 ```
 
 `refinements` is the only nested namespace of exports on `lib` (nullary checker records are attrsets too; an `isAttrs` sweep returns 16 names). `override` and `__refinements` are fields of returned checker VALUES, not exports, so they do not appear above.

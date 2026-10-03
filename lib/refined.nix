@@ -60,6 +60,7 @@ in
       renderNode,
       sealedMarker,
       hasDeclaredSubject,
+      completedType,
     }:
     base: refinements:
     let
@@ -69,62 +70,64 @@ in
       render = renderNode "refined" "refined<" "" ">" [ base ];
       baseVerify = builtins.head (verifiersOf "refined" [ base ]);
     in
-    mkCompositeSealed "refined" [ base ]
-      (tags: {
-        base = builtins.head tags;
-        # a refinement's `check` is sealed; one with no `check` is inert and enters whole, and one
-        # that is not a record is sealed whole
-        refinements = map (
-          r:
-          if !(builtins.isAttrs r) then
-            sealedMarker
-          else if r ? check then
-            r // { check = sealedMarker; }
-          else
-            r
-        ) refs;
-      })
-      (builtins.concatLists (
-        builtins.genList (
-          i:
+    completedType (
+      mkCompositeSealed "refined" [ base ]
+        (tags: {
+          base = builtins.head tags;
+          # a refinement's `check` is sealed; one with no `check` is inert and enters whole, and one
+          # that is not a record is sealed whole
+          refinements = map (
+            r:
+            if !(builtins.isAttrs r) then
+              sealedMarker
+            else if r ? check then
+              r // { check = sealedMarker; }
+            else
+              r
+          ) refs;
+        })
+        (builtins.concatLists (
+          builtins.genList (
+            i:
+            let
+              r = elemAt refs i;
+              path = [
+                "refinements"
+                (toString i)
+              ];
+            in
+            if !(builtins.isAttrs r) then
+              [
+                {
+                  inherit path;
+                  value = r;
+                }
+              ]
+            else if !(r ? check) then
+              [ ]
+            else
+              [
+                {
+                  inherit path;
+                  # a slice keeps the check's slot, where a selection would be a fresh thunk
+                  value = if hasDeclaredSubject r.check then r.check else builtins.intersectAttrs { check = null; } r;
+                }
+              ]
+          ) (length refs)
+        ))
+        render
+        (
+          v:
           let
-            r = elemAt refs i;
-            path = [
-              "refinements"
-              (toString i)
-            ];
+            baseErr = builtins.seq baseVerify (baseVerify v);
           in
-          if !(builtins.isAttrs r) then
-            [
-              {
-                inherit path;
-                value = r;
-              }
-            ]
-          else if !(r ? check) then
-            [ ]
-          else
-            [
-              {
-                inherit path;
-                # a slice keeps the check's slot, where a selection would be a fresh thunk
-                value = if hasDeclaredSubject r.check then r.check else builtins.intersectAttrs { check = null; } r;
-              }
-            ]
-        ) (length refs)
-      ))
-      render
-      (
-        v:
-        let
-          baseErr = builtins.seq baseVerify (baseVerify v);
-        in
-        if baseErr != null then baseErr else firstFailingRefinement refs v
-      )
-    // {
-      # introspection parity with the old __schema.refinements surface
-      __refinements = refs;
-    };
+          if baseErr != null then baseErr else firstFailingRefinement refs v
+        )
+      // {
+        # introspection parity with the old __schema.refinements surface
+        __refinements = refs;
+      }
+    );
 
   # The stock predicate library (behaviour-identical to lib/refined.nix).
   refinements = {

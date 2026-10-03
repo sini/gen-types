@@ -28,6 +28,8 @@ let
     mkChecker
     mkCompositeSealed
     mkIdentity
+    completedType
+    stampOk
     identityGuard
     comparisonSubject
     verifiersOf
@@ -119,6 +121,7 @@ let
   # `__sealed` maps by gen-algebra's `sealedCollisionEq` — `true` when they are `==`, `false` when
   # every differing leaf is an inert declared subject (two registered constructions), and a refusal
   # by name otherwise (two separately written lambdas, which no `==` can tell apart from one).
+  nameOf = v: if builtins.isString (v.name or null) then v.name else "<unnamed>";
   subjectOf = i: v: {
     name = if builtins.isString (v.name or null) then v.name else "<unnamed>";
     mark = i.minted;
@@ -130,7 +133,11 @@ let
       ia = identityOf a;
       ib = identityOf b;
     in
-    if ia ? minted && ib ? minted then
+    if !(stampOk a) || !(stampOk b) then
+      throw "gen-types: typeEq: `${
+        nameOf (if stampOk a then b else a)
+      }' is not the record its constructor completed: a `//` over a type keeps its identity while changing what that identity stands for; build the change through a constructor"
+    else if ia ? minted && ib ? minted then
       ia.minted == ib.minted
       && algebra.sealedCollisionEq "gen-types: typeEq" (subjectOf ia a) (subjectOf ib b)
     else if ia ? unmigrated && ib ? unmigrated then
@@ -150,6 +157,7 @@ checkers
       renderNode
       ;
     inherit (algebra) sealedMarker hasDeclaredSubject;
+    inherit completedType;
   };
   inherit (refinedLib) refinements;
 
@@ -231,6 +239,12 @@ checkers
   # elsewhere (gen-schema's `refined`) is identified by the same construction and decided by the same
   # `typeEq`. See `mkIdentity` in `./checkers.nix`.
   inherit mkIdentity comparisonSubject;
+
+  # ── the completion stamp's reader, for a boundary that rebuilds a type record ──
+  # `stampOk t` holds when `t` is the record its constructor (or the last boundary) completed, and
+  # fails on a `//` copy. gen-merge's protocol boundary reads it on import and re-ties the stamp to the
+  # record it completes (see `completedType` in `./checkers.nix`).
+  inherit stampOk;
 
   # ── the type-identity guard, for a producer outside this library ──
   # A construct that mints over a member's `__mint` must step the same index or it reopens the

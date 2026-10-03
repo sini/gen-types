@@ -93,6 +93,7 @@ in
       "refinements"
       "rewritesCheck"
       "runValidators"
+      "stampOk"
       "str"
       "strict"
       "string"
@@ -177,8 +178,10 @@ in
       unionRefuses5 = v (t.union [ rewritten ]) 5;
       listOfEq = t.typeEq (t.listOf own) (t.listOf rewritten);
       listOfSelf = t.typeEq (t.listOf own) (t.listOf own);
-      leafEq = t.typeEq own rewritten;
-      leafSelf = t.typeEq rewritten rewritten;
+      # `own` and `rewritten` are `//` copies of `int`, so `typeEq` refuses them by name (the
+      # completion stamp); `listOf` over them completes a record of its own and decides
+      leafEq = !(builtins.tryEval (t.typeEq own rewritten)).success;
+      leafSelf = !(builtins.tryEval (t.typeEq rewritten rewritten)).success;
       mintTag = builtins.attrNames (t.listOf rewritten).__mint;
       mintTagOwn = builtins.attrNames (t.listOf own).__mint;
       # the rewritten member is a sealed component, whatever its base's mint says
@@ -195,7 +198,7 @@ in
       unionRefuses5 = "R";
       listOfEq = false;
       listOfSelf = true;
-      leafEq = false;
+      leafEq = true;
       leafSelf = true;
       mintTag = [ "minted" ];
       sealedRewritten = [ "members.0" ];
