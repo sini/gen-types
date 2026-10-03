@@ -111,4 +111,20 @@ in
       msg = "b5qdr: the functor's own error";
     };
   };
+
+  # a set whose `__toString` throws propagates its own error through `path`, which coerces it to
+  # test absoluteness, so a union with a `path` member throws rather than serving the `attrs`
+  # member, as nixpkgs' `either path attrs` does (den-hoag-fyx6m)
+  flake.testsError.types-path.test-throwing-toString-propagates-through-union = {
+    expr =
+      (t.union [
+        t.path
+        t.attrs
+      ]).verify
+        { __toString = _: throw "fyx6m: the coercion's own error"; };
+    expectedError = {
+      type = "ThrownError";
+      msg = "fyx6m: the coercion's own error";
+    };
+  };
 }

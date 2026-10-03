@@ -623,7 +623,7 @@ let
       in
       checkers.typedef' name (v: if pred v then null else typeError name v);
 
-    # ── primitives (builtins.is* wrappers; `function`: nixpkgs' functor-aware `lib.isFunction`) ──
+    # ── primitives (builtins.is* wrappers; `function`, `path`, `pathLike`: the nixpkgs predicates) ──
     # These take `prim` rather than the public `typedef`: their predicates are this library's, so
     # the name is a coordinate in a closed vocabulary and the preimage over it is total.
     string = prim "string" isString;
@@ -632,8 +632,13 @@ let
     bool = prim "bool" isBool;
     float = prim "float" isFloat;
     number = prim "number" (v: isInt v || isFloat v);
-    path = prim "path" isPath;
-    pathLike = prim "pathLike" (v: isPath v || isDerivation v || isString v);
+    # nixpkgs' `types.path` (`pathWith { absolute = true; }`) and `pathWith { }`, over nixpkgs'
+    # `lib.isStringLike` read by name from gen-prelude: string-like, and for `path` absolute, a
+    # derivation counting as absolute without coercing it. String context is irrelevant.
+    path = prim "path" (
+      v: prelude.isStringLike v && (isDerivation v || substring 0 1 (toString v) == "/")
+    );
+    pathLike = prim "pathLike" prelude.isStringLike;
     attrs = prim "attrs" isAttrs;
     list = prim "list" isList;
     # nixpkgs' `lib.isFunction`, read by name from gen-prelude: a functor whose `__functor` returns a
