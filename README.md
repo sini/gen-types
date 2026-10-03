@@ -294,38 +294,39 @@ colliding member collided the whole tree above it — `listOf<cfg>` merged two d
 `cfg`s. A member therefore enters its composite's preimage as its **identity**, and a
 composite is structural exactly as deep as its members are.
 
-**The regime is decided by the mint, not by a list kept in step by hand.** The encoder is
-total: it encodes every node of an inert value or refuses by name. So handing it the
-constructor's arguments *is* the classification, and the sealed cases fall out of it —
+**Identity is per component.** A type mints over its constructor and its argument
+value, in which each member enters as a **tag**: a minted member by its identity, and a **sealed**
+one — a member with no minted identity, or one whose `check` a wrapper rewrote (the check-witness
+protocol) — as gen-algebra's `sealedMarker`. A constructor's own caller-supplied arguments are sealed
+components too: a `typedef`'s predicate, a refinement's `check`, a struct's `verify`. So every
+constructor **mints**, and beside the mark the type carries `__sealed`, the map from each sealed
+component's path to what a comparison reads: a lambda in its own slot, a registered construction
+(gen-algebra `mkIntensional`) as its declared subject, a sealed member as its record (closures first),
+and a minted member's own `__sealed` under the member's path (**propagation**). The mark is blind to
+`__sealed`, so it is never a key alone:
 
-| construction                                                                                                      | regime         | because                                                           |
-| ----------------------------------------------------------------------------------------------------------------- | -------------- | ----------------------------------------------------------------- |
-| primitives, `option`/`listOf`/`attrsOf`/`union`/`intersection`/`tuple`/`optionalAttr`, `enum`, `strict`, `struct` | **minted**     | every argument is inert, members entering as their own identities |
-| `struct(…).override { verify = …; }`                                                                              | **unmintable** | the extra invariant is a caller-supplied lambda                   |
-| `refined base refs`                                                                                               | **unmintable** | a refinement's `check` is a caller-supplied lambda                |
-| `typedef` / `typedef'`                                                                                            | **unmintable** | a caller-declared type is a caller-supplied lambda                |
+| construction                                                                 | `__mint`   | `__sealed`                      |
+| ---------------------------------------------------------------------------- | ---------- | ------------------------------- |
+| primitives, composites over minted members, `enum`, `strict`, `struct`       | **minted** | `{ }`: the mark is the identity |
+| `struct(…).override { verify = …; }`                                         | **minted** | `verify`                        |
+| `refined base refs`                                                          | **minted** | each `refinements.<i>`          |
+| `typedef` / `typedef'`                                                       | **minted** | `pred` / `verify`               |
+| a composite over a member with no minted identity, or a rewritten `check`    | **minted** | `members.<i>`                   |
+| a self-referential or over-deep type; arguments the encoder refuses (a path) | unmintable | —                               |
 
-The limbs apply per **component**, which is why the same `struct` constructor mints
-without a caller `verify` and seals with one: a single sealed component does not drag its
-whole constructor family onto the comparison limb.
+**`typeEq` decides over both.** Distinct marks decide `false`; equal marks with `==` sealed maps
+decide `true`; equal marks with unequal sealed maps decide `false` where every differing leaf is an
+inert registered subject (two different registered constructions) and **refuse by name** otherwise
+(gen-algebra `sealedCollisionEq`). So one `typedef` binding declared twice, or two `refined` types over
+one stock refinement, is one type; two constructions of one registered term are one type and a
+different argument or revision is another; and two separately written lambdas are refused, because
+Nix exposes no eliminator for a closure and `==` cannot tell them from one. `__id` refuses a demand
+while `__sealed` is non-empty, and `payloadOf` refuses such a record's payload. The identity half is
+exported as `mkIdentity ctor members mkArgs sealed name`, so a type built outside this library
+(gen-schema's `refined`) is identified by the same construction.
 
-**A sealed site owes an argued impossibility, and it is written at each declaration.** Nix
-exposes no eliminator for a closure — no builtin reads a captured environment or a body —
-so no preimage over one can be total, and an identity over a partial preimage merges
-behaviourally distinct checkers. Minting over the name instead is rejected: that is a
-name-only identity at a site that mints. **What would have to change is named too**: a
-predicate that is a first-order *term* the substrate interprets — a constructor plus an
-inert argument — is mint-admissible, and `refined` is the ecosystem's first migration
-case. Until it migrates, `typeEq` *decides* about two refined types by comparing their
-reified records, which separates them, and demanding `__id` refuses by name.
-
-**That comparison separates two IDENTICAL constructions too, not only different ones**, and
-the reach is wider than one checker. `check` is a bare lambda rebuilt on every call, so a
-`refined int positive` compares unequal to a second, separately built `refined int positive` — and because a composite over a sealed member is sealed as well, one `refined`
-field de-reflexivises the entire struct or list tree above it, at any depth. That precision
-is an allocation artefact rather than a property of the values, so this is the sealed limb's
-price and not a defect, and it errs in the safe direction: over MINTED members the same composites
-still compare equal.
+**A caller's predicate is a function or a registered construction**, refused by name at `typedef` and
+`typedef'` otherwise, catchably and when the type is built.
 
 The unmintable arm compares the record and never a component list: `check` is a bare
 lambda and an attribute selection is an indirection, so a component-wise form is false
@@ -357,8 +358,10 @@ t.typeEq (t.listOf t.int) (t.listOf t.int)          # => true
 t.typeEq t.int t.str                                # => false
 t.typeEq (t.strict [ "a" ]) (t.strict [ "b" ])      # => false  (both named "strict")
 t.typeEq (t.refined t.int r.positive)
-         (t.refined t.int r.tcpPort)                # => false  (sealed: compares the records)
-(t.refined t.int r.positive).__id                   # => throws: a lambda in an identity position
+         (t.refined t.int r.tcpPort)                # => false  (the messages differ in the mark)
+t.typeEq (t.refined t.int r.positive)
+         (t.refined t.int r.positive)               # => true   (one stock `check`, one slot)
+(t.refined t.int r.positive).__id                   # => throws: sealed component(s) 'refinements.0'
 ```
 
 **A self-referential or over-deep type has no identity, and says so catchably.** A member

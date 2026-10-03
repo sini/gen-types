@@ -16,18 +16,20 @@
 #
 # Function of a NAMED dep (gen convention §8): the only dependency is gen-prelude's
 # pure utility surface. No nixpkgs.lib anywhere under lib/ (purity invariant).
-{ prelude, identity }:
+{
+  prelude,
+  identity,
+  algebra,
+}:
 let
-  inherit (prelude)
-    filter
-    genAttrs
-    ;
-  core = import ./checkers.nix { inherit prelude identity; };
+  core = import ./checkers.nix { inherit prelude identity algebra; };
   inherit (core)
     checkers
     mkChecker
-    mkComposite
+    mkCompositeSealed
+    mkIdentity
     identityGuard
+    comparisonSubject
     verifiersOf
     rewritesCheck
     witnessedCheck
@@ -98,102 +100,6 @@ let
     else
       { unmigrated = v.name; };
 
-  # The comparison SUBJECT for the sealed arm: the reified record MINUS its two accessors,
-  # `__id` and `__okAt`, and minus nothing else — preceded by its own closure fields (below).
-  #
-  # ★ `__id` IS AN ACCESSOR, NOT DISTINGUISHING CONTENT, and in the sealed regime that
-  # accessor IS the named refusal. Comparing the record without excluding it forces the
-  # refusal inside a decision the refusal exists to permit, and the decision detonates.
-  # Measured on a sealed checker carrying a throwing `__id`: self-comparison of the
-  # unexcluded record ABORTS, and a distinct pair survives only because a lambda-valued
-  # attribute happens to be compared first and short-circuits — an ordering accident,
-  # not a property. Excluding the accessor removes both.
-  #
-  # ★ The alternative — making `__id` ABSENT on a sealed checker — is rejected: it would
-  # delete the named refusal a consumer that DEMANDS an identity must receive, trading a
-  # detonation for a silent missing attribute.
-  #
-  # `removeAttrs` preserves the evaluator's cell fast path (measured: a record compared
-  # with itself through it stays equal, two separately-built records stay unequal, and
-  # on a record with no `__id` it is a byte-for-byte no-op), so this excludes the
-  # accessor without emptying the relation.
-  #
-  # ★ WHY EXCLUDING `__id` IS SUFFICIENT AND NOT ARBITRARY. It is the only OTHER
-  # refusal-valued accessor a compared value can carry, because `__mint.minted` is
-  # shielded by the tagged sum's own shape: the minted and sealed arms live under
-  # DIFFERENT KEY NAMES, and Nix `==` decides on the name set before forcing any value.
-  # Measured, with its control: a throwing payload under a differently-named key is
-  # never reached, while the SAME name on both sides DOES force — so the short-circuit
-  # is the name check, not throws being ignored. Two sealed values carry inert payloads
-  # under one name, so nothing forces there either. The one path that does force a mint
-  # is a minted-against-minted comparison, and that arm never reaches here: it compares
-  # digests, which is a genuine DEMAND for an identity, where a catchable named refusal
-  # is the correct outcome rather than a hazard.
-  #
-  # ★ `__okAt` IS EXCLUDED BESIDE IT, on a different ground: it is total (a cyclic type's stream
-  # bottoms out at index 0), so nothing detonates, but it is an accessor rather than distinguishing
-  # content, and comparing it would force up to `typeIdentityDepth + 1` cells of each side.
-  #
-  # ★ CLOSURES FIRST (`den-hoag-6xj95`; ADR-0034's compared limb). The subject is a two-element
-  # list: `K`, the record's declared closure fields that are present as functions, then the whole
-  # record. List `==` decides index 0 before it touches index 1, and `==` on two functions answers
-  # without entering either closure, so a pair whose `K` differs is `false` before any of the
-  # record's own attributes is compared. The order matters for records carrying a BACK-EDGE: a
-  # nixpkgs record's `functor.type` is a late-bound lookup into its own lib, so across two lib
-  # instances (`lib.extend`, or two nixpkgs inputs) attrset `==`, which walks attributes in
-  # symbol-interning order, can reach that edge before the first difference and recurse until the
-  # evaluator aborts with an UNCATCHABLE stack overflow — on host Nix, Determinate Nix and Lix
-  # alike, depending on what text was parsed first. Every nixpkgs `mkOptionType` call builds its
-  # own `typeMerge` closure, and so does gen-merge's, so distinct constructions differ in `K`. `K`
-  # is a sub-attrset of the record holding the same slots: this is still one `==` over a subject
-  # containing the whole reified value, never a component-wise replacement of it.
-  #
-  # THE VALUE, SCOPED. Where the bare record `==` returns a boolean and every listed field present
-  # is total at WHNF, this subject returns the same boolean. Outside that domain the value moves,
-  # both ways: a listed field that throws when forced turns a bare `false` into that throw (the
-  # `isFunction` filter forces it), and a self-referential nixpkgs type compared across two
-  # instances (`let x = either str (listOf x)`) turns `infinite recursion` into `false`.
-  #
-  # ★ ENUMERATED EXCEPTION TO TOTALITY (ADR-0025 item 1: "enumerated and argued, never silent").
-  # The comparison can still abort, uncatchably and depending on interning order, where `K` is
-  # EQUAL and the record's `==` then reaches a back-edge before a difference:
-  #   1. A GRAFT: every closure slot shared, another attribute holding distinct cross-instance
-  #      data — `t.port // { foo = t.port; }` against `t.port // { foo = u.port; }`, or a
-  #      `functor` grafted from each instance. Sharing every closure slot means sharing the
-  #      construction, and a plain `//`-derivation shares its back-edges too and terminates, so
-  #      only a hand graft of cross-instance data reaches this. Foreign COMPOSITES reach it too
-  #      since `identityOf` stopped minting them: `let x = listOf str; in x // { foo = t.port; }`
-  #      against `x // { foo = u.port; }` aborts depending on interning order, where the mint
-  #      used to answer.
-  #   2. A record carrying NONE of the listed fields as a function: `K` is `{}` on both sides, the
-  #      prefix is vacuously equal and the bare `==` decides alone. A producer whose closure fields
-  #      carry other names lands here until this list names them.
-  # Closing either needs an evaluator-observable value identity — a visited set — which pure Nix
-  # does not expose. Same-instance comparisons take the slot shortcut and are unaffected.
-  comparisonSubject =
-    v:
-    let
-      s = removeAttrs v [
-        "__id"
-        "__okAt"
-      ];
-      # The closure fields declared by every record producer: nixpkgs' and gen-merge's
-      # `mkOptionType`, and this library's `mkChecker`/`mkComposite`.
-      sealedKeys = filter (n: s ? ${n} && builtins.isFunction s.${n}) [
-        "check"
-        "merge"
-        "typeMerge"
-        "getSubOptions"
-        "substSubModules"
-        "verify"
-        "__nameWithin"
-      ];
-    in
-    [
-      (builtins.intersectAttrs (genAttrs sealedKeys (_: null)) s)
-      s
-    ];
-
   # CONSERVATIVE EQUALITY — Palmer's own term (§2.3, §5.3); "intensional" qualifies the
   # FUNCTION and never the equality, and the misnomer is what read as a licence to
   # compare intension alone. Palmer's Fig. 5 is a CONJUNCTION over identity AND closure,
@@ -209,6 +115,15 @@ let
   # Finer is the safe direction for a type-equality decision — the failure a type
   # discipline exists to exclude is admitting semantically distinct values under one
   # type, i.e. returning TRUE wrongly.
+  # Both operands minted: distinct marks decide `false` and equal marks are decided over the two
+  # `__sealed` maps by gen-algebra's `sealedCollisionEq` — `true` when they are `==`, `false` when
+  # every differing leaf is an inert declared subject (two registered constructions), and a refusal
+  # by name otherwise (two separately written lambdas, which no `==` can tell apart from one).
+  subjectOf = i: v: {
+    name = if builtins.isString (v.name or null) then v.name else "<unnamed>";
+    mark = i.minted;
+    sealed = v.__sealed or { };
+  };
   conservativeEq =
     a: b:
     let
@@ -217,6 +132,7 @@ let
     in
     if ia ? minted && ib ? minted then
       ia.minted == ib.minted
+      && algebra.sealedCollisionEq "gen-types: typeEq" (subjectOf ia a) (subjectOf ib b)
     else if ia ? unmigrated && ib ? unmigrated then
       ia.unmigrated == ib.unmigrated
     else
@@ -229,10 +145,11 @@ checkers
   # refinement contracts
   refined = refinedLib.refined {
     inherit
-      mkComposite
+      mkCompositeSealed
       verifiersOf
       renderNode
       ;
+    inherit (algebra) sealedMarker hasDeclaredSubject;
   };
   inherit (refinedLib) refinements;
 
@@ -288,6 +205,7 @@ checkers
       && builtins.isAttrs p
       && p ? ctor
       && p ? args
+      && (t.__sealed or { }) == { }
       && identity.hashIdentity "type" [ "ctor" "args" ] (l: p.${l}) == t.__mint.minted
     then
       p
@@ -301,9 +219,18 @@ checkers
           "a wrapper rewrote its `check', so the construction its `__mint' names is its base's, not its own"
         else if !(t ? __payload && builtins.isAttrs t.__payload && t.__payload ? minted) then
           "it carries no minted `__payload'"
+        else if (t.__sealed or { }) != { } then
+          "it carries sealed component(s), so its payload is not a total preimage"
         else
           "its `__payload' is not the preimage of its own digest"
       }";
+
+  # ── the per-component identity, for a producer outside this library ──
+  # `mkIdentity ctor members mkArgs sealed name` returns the identity fields every constructor here
+  # carries (`__mint`, `__id`, `__payload`, `__sealed`, and `__okAt` on a composite), so a type built
+  # elsewhere (gen-schema's `refined`) is identified by the same construction and decided by the same
+  # `typeEq`. See `mkIdentity` in `./checkers.nix`.
+  inherit mkIdentity comparisonSubject;
 
   # ── the type-identity guard, for a producer outside this library ──
   # A construct that mints over a member's `__mint` must step the same index or it reopens the

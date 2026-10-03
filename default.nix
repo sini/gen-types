@@ -1,7 +1,8 @@
 # Standalone (non-flake) entry. Flake consumers should use the `.lib` output.
 #
-# gen-types is a function of two named values — `prelude` (gen-prelude, the pure utility base) and
-# `identity` (gen-identity, the substrate's one minting authority, a dependency-free leaf).
+# gen-types is a function of three named values — `prelude` (gen-prelude, the pure utility base),
+# `identity` (gen-identity, the substrate's one minting authority, a dependency-free leaf) and
+# `algebra` (gen-algebra, the intensional plane a type's per-component identity is built on).
 #
 # THREE CHANNELS, ONE PRECEDENCE, AND NONE OF THEM IS A PROBE. A named formal per dependency wins;
 # the `inputs` bag is next, tested by attrset membership so a supplied-but-throwing value throws as
@@ -12,8 +13,8 @@
 # library's dependency graph and its test/oracle graph are SEPARATE, and the second must not enter
 # the first — "whatever the optimal pattern is, it can no longer be DEFER TO THE TEST LOCK". The
 # ci lock keeps every input it has, including any cycle it carries, and is the TEST graph's own
-# pin source; no library code reads it any more. Both dependencies are root inputs of the root
-# lock, so both paths below are one segment.
+# pin source; no library code reads it any more. All three dependencies are root inputs of the root
+# lock, so every path below is one segment.
 #
 # `src` AND `dep` ARE FORMALS, NOT `let` BINDINGS, AND THAT IS THE INJECTABLE RESOLVER SEAM — the
 # one channel a cell can close. `src` is the only expression here that fetches; everything else
@@ -81,6 +82,8 @@ in
   # THIS shim's lock so the whole construction mints through one encoding — two instances would be
   # two content-address formulas for one node.
   identity ? inputs.gen-identity or (dep [ "gen-identity" ]),
+  # A dependency-free leaf too (`flake.nix`: no inputs), so its lib is a bare value.
+  algebra ? inputs.gen-algebra or (dep [ "gen-algebra" ]),
 }:
 # THE BODY IS EAGER, AND THAT IS WHAT MAKES THE ENTRY CELL TOTAL RATHER THAN PARTIAL. `forced` forces
 # every wired dependency to WHNF before `./lib` sees it, so a default that cannot resolve is loud AT
@@ -93,7 +96,7 @@ in
 # this reaches each dependency's root VALUE and never a member of it. A library that deliberately
 # refuses to build some member is therefore not an exception to it.
 let
-  deps = { inherit prelude identity; };
+  deps = { inherit prelude identity algebra; };
   forced = builtins.deepSeq (builtins.mapAttrs (_: builtins.typeOf) deps) null;
 in
 builtins.seq forced (wire {

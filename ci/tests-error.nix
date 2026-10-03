@@ -61,17 +61,34 @@ in
     };
   };
 
-  # and a sealed one
+  # and one with a sealed component (a minted mark beside a caller lambda)
   flake.testsError.types-payload.test-payloadOf-refusal-names-a-sealed-identity = {
     expr = t.payloadOf (t.typedef' "t" (_: null));
     expectedError = {
       type = "ThrownError";
-      msg = "gen-types: payloadOf: `t' has no readable construction payload: its identity is not minted";
+      msg = "gen-types: payloadOf: `t' has no readable construction payload: it carries sealed component\\(s\\), so its payload is not a total preimage";
+    };
+  };
+
+  # the predicate door names itself, the type and the accepted forms, catchably, where a record or an
+  # integer used to abort uncatchably at the first `verify` (den-hoag-6orb8 U1-wf)
+  flake.testsError.types-identity-sealed.test-predicate-door-names-the-accepted-forms = {
+    expr = t.typedef "tally" 3;
+    expectedError = {
+      type = "ThrownError";
+      msg = "gen-types: typedef: the predicate of type 'tally' must be a function or a registered construction \\(gen-algebra `mkIntensional`\\), but it is of type 'int'";
+    };
+  };
+  flake.testsError.types-identity-sealed.test-predicate-door-refuses-a-record = {
+    expr = (t.typedef "tally" { lo = 1; }).verify 1;
+    expectedError = {
+      type = "ThrownError";
+      msg = "gen-types: typedef: the predicate of type 'tally' must be a function or a registered construction \\(gen-algebra `mkIntensional`\\), but it is of type 'set'";
     };
   };
 
   # demanding the identity of a composite over a member whose `check` a wrapper rewrote names the
-  # member and the rewrite (den-hoag-ydro3)
+  # sealed member (den-hoag-ydro3: a rewritten member is a sealed component)
   flake.testsError.types-added-check.test-idOf-refusal-names-a-rewritten-check = {
     expr =
       let
@@ -80,7 +97,7 @@ in
       (t.listOf (own // { check = x: own.check x && x < 3; })).__id;
     expectedError = {
       type = "ThrownError";
-      msg = "identity: component type 'int' carries a `check' a wrapper rewrote, and a rewritten check has no mintable identity";
+      msg = "identity: type 'listOf<int>' has sealed component\\(s\\) 'members.0' \\(a caller-supplied lambda, a registered construction, or a type with no minted identity\\), which its mark is blind to: it is decided by `typeEq` and has no identity to demand";
     };
   };
 

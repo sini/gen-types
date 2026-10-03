@@ -55,6 +55,11 @@ read by other libraries off plain data; `__mint`'s contract is gen-algebra's, wh
   through, never its `name`.
 - `__okAt` — writer the composite checkers (`lib/checkers.nix`), reader `cellOf` (same file); also written by gen-schema (`lib/refined.nix`):
   on a composite only, the step-indexed guard over its members that bounds a cyclic type's mint.
+- `__sealed` — writer `mkIdentity` (`lib/checkers.nix`), also written by gen-schema (`lib/refined.nix`) through it; read by `typeEq` (`lib/default.nix`), gen-algebra `componentsPreimage` (propagation) and gen-merge (`lib/default.nix`, `completeParametric`):
+  the map from each SEALED component's path to its comparison subject (a lambda in its slot, a
+  registered construction's declared subject, a sealed member's record, a minted member's own
+  `__sealed`), `{ }` where the mark is a total identity. The mark is blind to it, so it is never a key
+  alone: `typeEq` decides over both.
 - `__payload` — writer `mkComposite` (`lib/checkers.nix`), reader `payloadOf` (`lib/default.nix`); read through it by gen-merge (`lib/default.nix`, `completeParametric`); pinned by gen-merge (`ci/tests/nixpkgs-protocol.nix`):
   the mint's own preimage `{ ctor; args; }`, retained READ-ONLY and NON-IDENTITY-BEARING (owner ruling on
   `den-hoag-parametric-merge-unlock-6wb87`, 2026-08-27): identity stays with `__mint.minted`, and it is
@@ -127,6 +132,8 @@ read by other libraries off plain data; `__mint`'s contract is gen-algebra's, wh
 | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `typeEq` / `conservativeEq` | `checker -> checker -> bool` (conservative equality, dispatched on the checker's `__mint` tag; the two are the same function). `conservativeEq` is Palmer's own term — *intensional* qualifies the FUNCTION, never the equality |
 | `payloadOf`                 | `checker -> { ctor; args; }`: the construction payload, only where it re-mints to the record's own digest; any other record (sealed, foreign, `//`-derived) is refused by name, catchably. Read-only; bears no identity         |
+| `mkIdentity`                | `ctor -> members -> mkArgs -> sealed -> name -> { __mint; __id; __payload; __sealed; __okAt?; }`: the per-component identity every constructor here builds, for a producer outside `lib/` (gen-schema's `refined`)              |
+| `comparisonSubject`         | `value -> subject`: what the compared regime reads — a declared subject where one is carried, else the record minus `__id`/`__okAt`, closures first                                                                             |
 | `identityGuard`             | the step-indexed type-nesting guard a composite producer outside `lib/` builds `__okAt` with (gen-schema's `refined`), so the bound and its refusal stay single-sourced                                                         |
 
 **Check-witness protocol** — `lib/checkers.nix`, exported from `lib/default.nix`. gen-types OWNS it (owner ruling on `den-hoag-ydro3`, OQ-A arm (ii)); a producer builds the pair with `witnessedCheck` (or publishes `witnessRecord`'s one record under both fields itself, held to `witnessedCheck`'s output by its own door: arm (c)), and a reader asks `rewritesCheck` and never spells the test. See README, *The check-witness protocol*.
@@ -213,7 +220,7 @@ nix eval --json .#lib --apply 'l: { top = builtins.attrNames l; refinements = bu
 Current output (verbatim):
 
 ```json
-{"refinements":["nonEmpty","positive","tcpPort"],"top":["any","attrs","attrsOf","bool","conservativeEq","defaultOnError","derivation","enum","float","formatErrors","function","identityGuard","int","intersection","list","listOf","mkValidator","never","null","number","option","optionalAttr","path","pathLike","payloadOf","refined","refinements","rewritesCheck","runValidators","str","strict","string","struct","tuple","typeEq","typedef","typedef'","union","witnessRecord","witnessedCheck"]}
+{"refinements":["nonEmpty","positive","tcpPort"],"top":["any","attrs","attrsOf","bool","comparisonSubject","conservativeEq","defaultOnError","derivation","enum","float","formatErrors","function","identityGuard","int","intersection","list","listOf","mkIdentity","mkValidator","never","null","number","option","optionalAttr","path","pathLike","payloadOf","refined","refinements","rewritesCheck","runValidators","str","strict","string","struct","tuple","typeEq","typedef","typedef'","union","witnessRecord","witnessedCheck"]}
 ```
 
 `refinements` is the only nested namespace of exports on `lib` (nullary checker records are attrsets too; an `isAttrs` sweep returns 16 names). `override` and `__refinements` are fields of returned checker VALUES, not exports, so they do not appear above.

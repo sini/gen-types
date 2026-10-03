@@ -67,34 +67,45 @@ in
     };
   };
 
-  # The field is TOTAL and TAGGED like `__mint`, and the sealed arm never carries `args`.
+  # The field is TOTAL and TAGGED like `__mint`, and the sealed arm never carries `args`. A type
+  # with a SEALED COMPONENT is minted, and its payload holds `sealedMarker` where the component sits,
+  # never the lambda (`payloadOf` still refuses it, above).
   flake.tests.types-payload.test-payload-field-is-total-and-tagged = {
     expr = {
       minted = builtins.attrNames (t.enum "e" [ "a" ]).__payload;
-      sealed = sealed.__payload;
-      refined = (t.refined t.int t.refinements.positive).__payload;
+      sealed = sealed.__payload.minted.args;
+      refined = (t.refined t.int t.refinements.positive).__payload.minted.args.refinements;
       cyclicKeys = builtins.attrNames cyc.__payload;
     };
     expected = {
       minted = [ "minted" ];
-      sealed.unmintable.ctor = "typedef";
-      refined.unmintable.ctor = "refined";
+      sealed = {
+        name = "t";
+        verify.sealed = true;
+      };
+      refined = [
+        {
+          check.sealed = true;
+          message = "must be positive";
+        }
+      ];
       cyclicKeys = [ "unmintable" ];
     };
   };
 
   # The field joins the COMPARED regime's subject and must not detonate it: a sealed record still
-  # equals itself, and sealed twins, a minted-vs-sealed pair and a cyclic self stay as before.
+  # equals itself, a minted-vs-sealed pair and a cyclic self stay as before, and two separately
+  # written verifiers under one name are refused by name (one mark, unequal only at a lambda).
   flake.tests.types-payload.test-payload-field-leaves-the-compared-regime-intact = {
     expr = {
       sealedSelf = t.typeEq sealed sealed;
-      sealedTwin = t.typeEq sealed (t.typedef' "t" (_: null));
+      sealedTwin = refused (t.typeEq sealed (t.typedef' "t" (_: null)));
       mintedVsSealed = t.typeEq (t.enum "t" [ "a" ]) sealed;
       cyclicSelf = t.typeEq cyc cyc;
     };
     expected = {
       sealedSelf = true;
-      sealedTwin = false;
+      sealedTwin = true;
       mintedVsSealed = false;
       cyclicSelf = true;
     };

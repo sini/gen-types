@@ -25,6 +25,7 @@
   genTypes,
   prelude,
   identity,
+  algebra,
   lib,
   ...
 }:
@@ -45,7 +46,7 @@ let
   # TWO PREDICATES, and the totality cell would then be comparing the shim against a copy nothing
   # applies.
   entryArgs = {
-    inherit prelude identity;
+    inherit prelude identity algebra;
     # ★ THE SEAM IS `src`, AND IT IS PATH-SHAPED. The `throw` is what makes non-hermeticity
     # IMPOSSIBLE for this application rather than merely detected. `dep` is closed the same way, so
     # neither the fetch nor the build side can be reached through the defaults this cell overrides.

@@ -66,6 +66,7 @@ in
       "attrs"
       "attrsOf"
       "bool"
+      "comparisonSubject"
       "conservativeEq"
       "defaultOnError"
       "derivation"
@@ -78,6 +79,7 @@ in
       "intersection"
       "list"
       "listOf"
+      "mkIdentity"
       "mkValidator"
       "never"
       "null"
@@ -179,6 +181,8 @@ in
       leafSelf = t.typeEq rewritten rewritten;
       mintTag = builtins.attrNames (t.listOf rewritten).__mint;
       mintTagOwn = builtins.attrNames (t.listOf own).__mint;
+      # the rewritten member is a sealed component, whatever its base's mint says
+      sealedRewritten = builtins.attrNames (t.listOf rewritten).__sealed;
       payloadRefused = !(builtins.tryEval (t.payloadOf rewritten)).success;
       payloadOwn = (t.payloadOf own).ctor;
     };
@@ -193,7 +197,8 @@ in
       listOfSelf = true;
       leafEq = false;
       leafSelf = true;
-      mintTag = [ "unmintable" ];
+      mintTag = [ "minted" ];
+      sealedRewritten = [ "members.0" ];
       mintTagOwn = [ "minted" ];
       payloadRefused = true;
       payloadOwn = "prim";

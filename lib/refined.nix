@@ -45,28 +45,21 @@ in
   # positive` == `refined int tcpPort`. The base is mint-admissible and enters as its own identity;
   # the predicates are the problem, and they are the ecosystem's first migration case.
   #
-  # ★★★ SO THIS FAMILY IS SEALED TODAY, AND THAT IS THE ANSWER RATHER THAN A GAP. A refinement is
-  # `{ check = value -> bool; message; }` — an arbitrary CALLER-SUPPLIED lambda, `normalize` above
-  # accepting whatever the caller passes — and no preimage over a closure can be total. ADR-0034
-  # takes the per-component reading: where a component's distinguishing content is a caller lambda,
-  # its collapse is replaced by a REFUSAL and never by a structural identity. So `typeEq` decides
-  # about two refined types by comparing their reified records, which separates them, and demanding
-  # `__id` of one refuses by name. That is strictly better than the silent merge it replaces and it
-  # is NOT k1uv's resolution for this family — the resolution is the migration below.
-  #
-  # ★ WHAT WOULD HAVE TO CHANGE, written at the declaration as the burden asymmetry requires: the
-  # predicate stops being a lambda. A refinement becomes a first-order term `{ pred; args; message; }`
-  # whose `check` the substrate DERIVES from `(pred, args)` against a registry of predicate
-  # builders; then both components are mint-admissible and this constructor mints over
-  # `{ base = <base's identity>; refinements = [ {pred, args} … ] }` with no other edit here. Two
-  # things block it and neither is this file's to decide: WHICH first-order vocabulary, given that
-  # gen-schema carries a second `refined` implementation and the two must share one rather than
-  # ship the vendoring defect one level up; and the shipped callers that pass inline lambdas today.
+  # ★★★ SO EACH PREDICATE IS A SEALED COMPONENT, PER ADR-0034's PER-COMPONENT READING. A refinement
+  # is `{ check; message; }` with `check` a caller lambda or a registered construction (gen-algebra
+  # `mkIntensional`), and no preimage over a closure can be total. The type mints over its
+  # constructor, its base's tag and each refinement with `sealedMarker` in place of its `check`; the
+  # checks are carried in `__sealed`, a lambda in its own slot (so a stock refinement such as
+  # `positive` shared by two types decides `true`) and a registered construction by its declared
+  # subject (so two constructions of one term decide `true`). `typeEq` decides over the mark and
+  # those subjects, and demanding `__id` refuses by name.
   refined =
     {
-      mkComposite,
+      mkCompositeSealed,
       verifiersOf,
       renderNode,
+      sealedMarker,
+      hasDeclaredSubject,
     }:
     base: refinements:
     let
@@ -76,11 +69,50 @@ in
       render = renderNode "refined" "refined<" "" ">" [ base ];
       baseVerify = builtins.head (verifiersOf "refined" [ base ]);
     in
-    mkComposite "refined" [ base ]
-      (ids: {
-        base = builtins.head ids;
-        refinements = refs;
+    mkCompositeSealed "refined" [ base ]
+      (tags: {
+        base = builtins.head tags;
+        # a refinement's `check` is sealed; one with no `check` is inert and enters whole, and one
+        # that is not a record is sealed whole
+        refinements = map (
+          r:
+          if !(builtins.isAttrs r) then
+            sealedMarker
+          else if r ? check then
+            r // { check = sealedMarker; }
+          else
+            r
+        ) refs;
       })
+      (builtins.concatLists (
+        builtins.genList (
+          i:
+          let
+            r = elemAt refs i;
+            path = [
+              "refinements"
+              (toString i)
+            ];
+          in
+          if !(builtins.isAttrs r) then
+            [
+              {
+                inherit path;
+                value = r;
+              }
+            ]
+          else if !(r ? check) then
+            [ ]
+          else
+            [
+              {
+                inherit path;
+                # a slice keeps the check's slot, where a selection would be a fresh thunk
+                value = if hasDeclaredSubject r.check then r.check else builtins.intersectAttrs { check = null; } r;
+              }
+            ]
+        ) (length refs)
+      ))
       render
       (
         v:

@@ -186,19 +186,17 @@ in
       tupleOfStructs = t.typeEq (t.tuple [ (t.struct "cfg" { a = t.int; }) ]) (
         t.tuple [ (t.struct "cfg" { a = t.str; }) ]
       );
-      # A composite over a SEALED member is sealed too: no preimage over it is total, so
-      # it refuses rather than minting over the part it can see.
+      # A composite over a member with a SEALED component stays MINTED (ADR-0034's
+      # per-component clause): it mints over the member's mark and carries the member's
+      # sealed subject under the member's path, so the mark never decides alone.
       composingASealedMember = regimeOf (t.listOf (t.refined t.int r.positive));
+      sealedTravels = builtins.attrNames (t.listOf (t.refined t.int r.positive)).__sealed;
 
-      # ★★ AND THE SEALED ARM'S PRECISION TRAVELS THE SAME WAY — the exact mirror of the
-      # defect above, pinned on the SHIPPED constructors rather than on a fixture. Two
-      # IDENTICAL `refined` constructions compare UNEQUAL: the sealed arm compares reified
-      # records, `check` is a bare lambda rebuilt per call, and ADR-0034 declares that
-      # precision an allocation artefact. One sealed member then de-reflexivises the whole
-      # tree above it, at any depth. So this landing is two-directional — collisions
-      # removed, and reflexivity-over-construction lost wherever the closure is sealed —
-      # and `controlEqualMembers` below is what keeps that from reading as a broken
-      # relation: over MINTED members the same composites still compare equal.
+      # ★★ AND REFLEXIVITY OVER CONSTRUCTION HOLDS WHERE THE SEALED COMPONENT IS ONE BINDING.
+      # Two `refined` constructions over the one stock refinement carry its `check` in its own
+      # slot, so they decide `true`, and so does a composite over them. Two separately written
+      # lambdas are still refused (`types-identity-sealed.nix`), and `controlEqualMembers` below
+      # is the minted control.
       refinedSelf = t.typeEq (t.refined t.int r.positive) (t.refined t.int r.positive);
       listOfRefinedSelf = t.typeEq (t.listOf (t.refined t.int r.positive)) (
         t.listOf (t.refined t.int r.positive)
@@ -214,9 +212,10 @@ in
       listOfStructs = false;
       attrsOfEnums = false;
       tupleOfStructs = false;
-      composingASealedMember = "unmintable:listOf";
-      refinedSelf = false;
-      listOfRefinedSelf = false;
+      composingASealedMember = "minted";
+      sealedTravels = [ "members.0" ];
+      refinedSelf = true;
+      listOfRefinedSelf = true;
       controlEqualMembers = true;
     };
   };
@@ -226,9 +225,10 @@ in
   # refuses it by name. So the sealed rows are sealed for a stated reason (a caller lambda
   # in the arguments) rather than by a list in the library that could drift.
   #
-  # ★ `struct` is the per-component reading paying out: the SAME constructor mints without
-  # a caller `verify` and seals with one, so one struct's extra invariant does not drag
-  # every struct onto the comparison limb.
+  # ★ The per-component reading pays out on every constructor: a caller lambda (a struct's
+  # `verify`, a refinement's `check`, a `typedef`'s predicate) is a SEALED COMPONENT, so the type
+  # still mints, over the rest, and carries the lambda in `__sealed`
+  # (`test-sealed-constructions-refuse-when-an-identity-is-demanded` holds the demand's refusal).
   #
   # ★★ THIS CELL IS ALSO THE GUARD ON A MINT THAT STOPS WORKING, which is the one price of
   # letting the mint decide the regime: a `hashIdentity` that refused everything would
@@ -253,9 +253,9 @@ in
       enum = "minted";
       strict = "minted";
       struct = "minted";
-      structWithCallerVerify = "unmintable:struct";
-      refined = "unmintable:refined";
-      callerTypedef = "unmintable:typedef";
+      structWithCallerVerify = "minted";
+      refined = "minted";
+      callerTypedef = "minted";
     };
   };
 

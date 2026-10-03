@@ -3,6 +3,7 @@
     gen-harness.url = "github:sini/gen-harness";
     gen-prelude.url = "github:sini/gen-prelude";
     gen-identity.url = "github:sini/gen-identity";
+    gen-algebra.url = "github:sini/gen-algebra";
     nixpkgs.url = "https://channels.nixos.org/nixos-unstable/nixexprs.tar.xz";
   };
 
@@ -13,6 +14,7 @@
       genTypes = import ../lib {
         inherit prelude;
         identity = inputs.gen-identity.lib;
+        algebra = inputs.gen-algebra.lib;
       };
     in
     gen-harness.lib.mkCi {
@@ -32,6 +34,7 @@
       specialArgs = {
         inherit genTypes prelude;
         identity = inputs.gen-identity.lib;
+        algebra = inputs.gen-algebra.lib;
       };
     };
 }

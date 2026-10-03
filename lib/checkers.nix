@@ -25,10 +25,17 @@
 #             certifies it against the digest (see `mkComposite`).
 #   __okAt  — on a COMPOSITE only: the step-indexed guard over its members that bounds type
 #             nesting for the mint (see `identityGuard`). A leaf carries none.
+#   __sealed — the map from each SEALED component's path to its comparison subject, `{ }` where
+#             every component is minted or inert: the part of the type its mark is blind to, and
+#             what `typeEq` compares beside the mark (see `mkIdentity`).
 #
 # NO nixpkgs.lib here (purity invariant, see ci/tests/types-purity.nix): builtins
 # plus the handful of gen-prelude utilities the substrate already vendors.
-{ prelude, identity }:
+{
+  prelude,
+  identity,
+  algebra,
+}:
 let
   inherit (prelude)
     all
@@ -270,7 +277,7 @@ let
   # builtin's own abort — which is the property gen-identity's encoder was built to have.
   mkChecker = ctor: args: mkComposite ctor [ ] (_: args);
 
-  # ★★ THE TYPE-NESTING AXIS HAS ITS OWN BOUND, because the flat preimage (`idOf` below) takes type
+  # ★★ THE TYPE-NESTING AXIS HAS ITS OWN BOUND, because the flat preimage (`tagOf` below) takes type
   # nesting off the encoder's. Each `hashIdentity` call is bounded and total; the recursion runs
   # BETWEEN calls, through each member's memoised `__mint`, so a self-referential type
   # (`let r = union [ int (listOf r) ]; in r`) re-enters its own thunk — a blackhole `tryEval` does
@@ -334,20 +341,183 @@ let
       refusal = depthRefusal;
     };
 
-  # ★ `args` IS BUILT FROM `members`, never beside them: a member identity reaches the preimage only
-  # through `mkArgs ids`, where `ids` is `idOf` over the same members the guard reads. Two lists kept
-  # in step by hand reopen the blackhole silently for a constructor that passes one and not the
-  # other. `members` is a list, or an attrset whose `ids` are keyed alike.
-  mkComposite =
-    ctor: members: mkArgs: name0: verify:
+  # The comparison SUBJECT for the sealed arm: the reified record MINUS its two accessors,
+  # `__id` and `__okAt`, and minus nothing else — preceded by its own closure fields (below).
+  #
+  # ★ `__id` IS AN ACCESSOR, NOT DISTINGUISHING CONTENT, and in the sealed regime that
+  # accessor IS the named refusal. Comparing the record without excluding it forces the
+  # refusal inside a decision the refusal exists to permit, and the decision detonates.
+  # Measured on a sealed checker carrying a throwing `__id`: self-comparison of the
+  # unexcluded record ABORTS, and a distinct pair survives only because a lambda-valued
+  # attribute happens to be compared first and short-circuits — an ordering accident,
+  # not a property. Excluding the accessor removes both.
+  #
+  # ★ The alternative — making `__id` ABSENT on a sealed checker — is rejected: it would
+  # delete the named refusal a consumer that DEMANDS an identity must receive, trading a
+  # detonation for a silent missing attribute.
+  #
+  # `removeAttrs` preserves the evaluator's cell fast path (measured: a record compared
+  # with itself through it stays equal, two separately-built records stay unequal, and
+  # on a record with no `__id` it is a byte-for-byte no-op), so this excludes the
+  # accessor without emptying the relation.
+  #
+  # ★ WHY EXCLUDING `__id` IS SUFFICIENT AND NOT ARBITRARY. It is the only OTHER
+  # refusal-valued accessor a compared value can carry, because `__mint.minted` is
+  # shielded by the tagged sum's own shape: the minted and sealed arms live under
+  # DIFFERENT KEY NAMES, and Nix `==` decides on the name set before forcing any value.
+  # Measured, with its control: a throwing payload under a differently-named key is
+  # never reached, while the SAME name on both sides DOES force — so the short-circuit
+  # is the name check, not throws being ignored. Two sealed values carry inert payloads
+  # under one name, so nothing forces there either. The one path that does force a mint
+  # is a minted-against-minted comparison, and that arm never reaches here: it compares
+  # digests, which is a genuine DEMAND for an identity, where a catchable named refusal
+  # is the correct outcome rather than a hazard.
+  #
+  # ★ `__okAt` IS EXCLUDED BESIDE IT, on a different ground: it is total (a cyclic type's stream
+  # bottoms out at index 0), so nothing detonates, but it is an accessor rather than distinguishing
+  # content, and comparing it would force up to `typeIdentityDepth + 1` cells of each side.
+  #
+  # ★ CLOSURES FIRST (`den-hoag-6xj95`; ADR-0034's compared limb). The subject is a two-element
+  # list: `K`, the record's declared closure fields that are present as functions, then the whole
+  # record. List `==` decides index 0 before it touches index 1, and `==` on two functions answers
+  # without entering either closure, so a pair whose `K` differs is `false` before any of the
+  # record's own attributes is compared. The order matters for records carrying a BACK-EDGE: a
+  # nixpkgs record's `functor.type` is a late-bound lookup into its own lib, so across two lib
+  # instances (`lib.extend`, or two nixpkgs inputs) attrset `==`, which walks attributes in
+  # symbol-interning order, can reach that edge before the first difference and recurse until the
+  # evaluator aborts with an UNCATCHABLE stack overflow — on host Nix, Determinate Nix and Lix
+  # alike, depending on what text was parsed first. Every nixpkgs `mkOptionType` call builds its
+  # own `typeMerge` closure, and so does gen-merge's, so distinct constructions differ in `K`. `K`
+  # is a sub-attrset of the record holding the same slots: this is still one `==` over a subject
+  # containing the whole reified value, never a component-wise replacement of it.
+  #
+  # THE VALUE, SCOPED. Where the bare record `==` returns a boolean and every listed field present
+  # is total at WHNF, this subject returns the same boolean. Outside that domain the value moves,
+  # both ways: a listed field that throws when forced turns a bare `false` into that throw (the
+  # `isFunction` filter forces it), and a self-referential nixpkgs type compared across two
+  # instances (`let x = either str (listOf x)`) turns `infinite recursion` into `false`.
+  #
+  # ★ ENUMERATED EXCEPTION TO TOTALITY (ADR-0025 item 1: "enumerated and argued, never silent").
+  # The comparison can still abort, uncatchably and depending on interning order, where `K` is
+  # EQUAL and the record's `==` then reaches a back-edge before a difference:
+  #   1. A GRAFT: every closure slot shared, another attribute holding distinct cross-instance
+  #      data — `t.port // { foo = t.port; }` against `t.port // { foo = u.port; }`, or a
+  #      `functor` grafted from each instance. Sharing every closure slot means sharing the
+  #      construction, and a plain `//`-derivation shares its back-edges too and terminates, so
+  #      only a hand graft of cross-instance data reaches this. Foreign COMPOSITES reach it too
+  #      since `identityOf` stopped minting them: `let x = listOf str; in x // { foo = t.port; }`
+  #      against `x // { foo = u.port; }` aborts depending on interning order, where the mint
+  #      used to answer.
+  #   2. A record carrying NONE of the listed fields as a function: `K` is `{}` on both sides, the
+  #      prefix is vacuously equal and the bare `==` decides alone. A producer whose closure fields
+  #      carry other names lands here until this list names them.
+  # Closing either needs an evaluator-observable value identity — a visited set — which pure Nix
+  # does not expose. Same-instance comparisons take the slot shortcut and are unaffected.
+  #
+  # ★ A DECLARED SUBJECT IS THE SUBJECT: a registered construction (gen-algebra `mkIntensional`)
+  # names its comparison subject, its registry coordinate, constructor and inert arguments, and that
+  # is answered instead of the record, whose `fn` is a lambda rebuilt per construction.
+  comparisonSubject =
+    v:
+    if algebra.hasDeclaredSubject v then
+      v.__mint.unmintable.subject
+    else
+      let
+        s = removeAttrs v [
+          "__id"
+          "__okAt"
+        ];
+        # The closure fields declared by every record producer: nixpkgs' and gen-merge's
+        # `mkOptionType`, and this library's `mkChecker`/`mkComposite`.
+        sealedKeys = filter (n: s ? ${n} && isFunction s.${n}) [
+          "check"
+          "merge"
+          "typeMerge"
+          "getSubOptions"
+          "substSubModules"
+          "verify"
+          "__nameWithin"
+        ];
+      in
+      [
+        (builtins.intersectAttrs (prelude.genAttrs sealedKeys (_: null)) s)
+        s
+      ];
+
+  # ★★ THE PER-COMPONENT IDENTITY OF A TYPE (ADR-0034's per-component clause; den-hoag-6orb8), the
+  # half every constructor shares and the one a producer outside this library builds through. A
+  # type's MARK is minted over its constructor and its argument value, in which each member enters
+  # by a TAG: a minted member by its digest, and a SEALED member (one carrying no minted `__mint`, or
+  # whose `check` a wrapper rewrote — the check-witness protocol below) by gen-algebra's
+  # `sealedMarker`. A constructor's own sealed arguments (a caller's predicate, a struct's `verify`)
+  # are tagged the same way by the constructor. So a composite STAYS MINTED whatever its components'
+  # regimes, and one sealed component no longer drags it onto the compared regime.
+  #
+  # Beside the mark the type carries `__sealed`, gen-algebra `componentsPreimage`'s map from each
+  # sealed component's path to its comparison subject: a sealed member as this library's
+  # `comparisonSubject` of it (closures first), a lambda in its own slot, a registered construction
+  # as `{ compared = <its declared subject>; }`, and a minted member that itself seals something as
+  # its own `__sealed` (PROPAGATION). The mark is blind to all of it, so it is NEVER a key on its own:
+  # `typeEq` decides over both (`sealedCollisionEq`), `__id` refuses a demand while `__sealed` is
+  # non-empty, and `payloadOf` refuses to read a payload that is not a total preimage.
+  #
+  # ★ THE PREIMAGE IS THE ONE IT WAS FOR A TYPE WHOSE COMPONENTS ARE ALL MINTED OR INERT: a member's
+  # tag is its digest, as it was, so every such digest is unchanged and only types that used to be
+  # unmintable gain a mark.
+  #
+  # ★ `args` IS BUILT FROM `members`, never beside them: a member's tag reaches the preimage only
+  # through `mkArgs tags`, where `tags` reads the same members the guard reads. Two lists kept in
+  # step by hand reopen the blackhole silently for a constructor that passes one and not the other.
+  # `members` is a list, or an attrset whose `tags` are keyed alike. `sealed` is a list of the
+  # constructor's own sealed arguments, `{ path = [ <segment> ]; value; }`, each of which `mkArgs`
+  # places as `sealedMarker`.
+  #
+  # Returns the identity fields: `__mint`, `__id`, `__payload`, `__sealed`, and `__okAt` on a
+  # composite. `name` words the refusals.
+  isSealedMember =
+    t: !(isAttrs t) || rewritesCheck t || !(t ? __mint && isAttrs t.__mint && t.__mint ? minted);
+  tagOf = t: if isSealedMember t then algebra.sealedMarker else t.__mint.minted;
+  mkIdentity =
+    ctor: members: mkArgs: sealed: name:
     let
       memberList = if isList members then members else attrValues members;
-      ids = if isList members then map idOf members else mapAttrs (_: idOf) members;
-      args = mkArgs ids;
+      keyed =
+        if isList members then
+          builtins.genList (i: {
+            k = toString i;
+            t = elemAt members i;
+          }) (length members)
+        else
+          map (k: {
+            inherit k;
+            t = members.${k};
+          }) (attrNames members);
+      tags = if isList members then map tagOf members else mapAttrs (_: tagOf) members;
+      args = mkArgs tags;
       guard = identityGuard memberList;
-      # a combinator hands a RENDERER (budget -> string), a leaf or a nominal type its name
-      name = if isFunction name0 then name0 nameBudget else name0;
-      within = if isFunction name0 then name0 else leafWithin name0;
+      pre = algebra.componentsPreimage identity.hashIdentity (
+        map (
+          m:
+          if isSealedMember m.t then
+            {
+              path = [
+                "members"
+                m.k
+              ];
+              value = if isAttrs m.t then comparisonSubject m.t else m.t;
+              sealed = true;
+            }
+          else
+            {
+              path = [
+                "members"
+                m.k
+              ];
+              value = m.t;
+            }
+        ) keyed
+        ++ map (c: c // { sealed = true; }) sealed
+      );
       mint =
         identity.hashIdentity "type"
           [
@@ -364,30 +534,15 @@ let
       attempt = if guard.ok then tryEval mint else { success = false; };
     in
     {
-      inherit name verify;
-      __nameWithin = within;
-      check =
-        v: v2:
-        let
-          e = verify v;
-        in
-        if e == null then v2 else throw e;
-      __name = baseName name;
-
       # ★ `__mint` IS A TAGGED SUM AND IT IS TOTAL — every checker carries it, and a reader
       # dispatches on the TAG rather than branching on the field's presence. The relation in
       # `lib/default.nix` reads this and never `__id`.
       #
       # The sealed arm carries the constructor and points at the accessor rather than restating the
       # reason: `__id` re-runs the same mint UNCAUGHT, so a reader that wants the cause gets the
-      # refusal that actually fired instead of a paraphrase kept in step by hand.
-      #
-      # ★ WHOSE REFUSAL THAT IS DIFFERS BY FAMILY, AND TWO OF THE THREE IS NOT ALL THREE. `refined`
-      # and a `struct` carrying a caller `verify` reach the encoder with a lambda in `args`, so what
-      # fires is gen-identity's own — "a lambda in an identity position". `typedef`/`typedef'` is the
-      # excluded case and is excluded DELIBERATELY: it passes a throwing `args` of its own, because
-      # the mint sees an argument value and cannot see the NAME of the type being declared, and
-      # naming it is what makes the refusal actionable. That one message is this file's to keep true.
+      # refusal that actually fired instead of a paraphrase kept in step by hand. It is reached by a
+      # type past the type-identity bound, and by arguments the encoder refuses outside the
+      # constructor's declared sealed ones (an `enum` over a path).
       __mint =
         if attempt.success then
           { minted = attempt.value; }
@@ -400,11 +555,19 @@ let
           };
 
       # `__id` is the ACCESSOR a consumer reads when it DEMANDS an identity — it returns the
-      # minted value, and on a value with no mintable identity it IS the named refusal. It is
-      # LAZY, so a consumer that never demands one never hashes; and it is deliberately NOT what
-      # the equality relation reads, because demanding an identity of a sealed value is a refusal
-      # while DECIDING about one is not.
-      __id = if guard.ok then mint else guard.refusal;
+      # minted value, and on a value with no exact identity it IS the named refusal. It is LAZY, so
+      # a consumer that never demands one never hashes; and it is deliberately NOT what the
+      # equality relation reads, because demanding an identity of a sealed value is a refusal while
+      # DECIDING about one is not. A mark beside a non-empty `__sealed` is not an exact identity.
+      __id =
+        if !guard.ok then
+          guard.refusal
+        else if pre.sealed != { } then
+          throw "identity: type '${name}' has sealed component(s) ${
+            concatStringsSep ", " (map (k: "'${k}'") (attrNames pre.sealed))
+          } (a caller-supplied lambda, a registered construction, or a type with no minted identity), which its mark is blind to: it is decided by `typeEq` and has no identity to demand"
+        else
+          mint;
 
       # ★ `__payload` IS THE MINT'S OWN PREIMAGE, RETAINED READ-ONLY, AND IT BEARS NO IDENTITY
       # (owner ruling on den-hoag-parametric-merge-unlock-6wb87, 2026-08-27; design of record
@@ -417,16 +580,15 @@ let
       # its value is lazy, so reading the record's key set forces no mint (a regime-dependent key
       # would, and on a self-referential type that is `identityGuard`'s blackhole). It is decided by
       # the same `attempt` as `__mint`, so the minted arm holds only what the encoder certified
-      # inert: no lambda, no path, no derivation. The sealed arm carries `ctor` alone and never
-      # `args`, which would hold a caller lambda or `typedef'`'s deliberate throw.
+      # inert: no lambda, no path, no derivation. A sealed component appears in it as
+      # `sealedMarker`, and `payloadOf` refuses a record whose `__sealed` is non-empty.
       #
       # ★ ON THE COMPARED REGIME THIS FIELD JOINS `comparisonSubject`'s record (lib/default.nix),
       # which can only make `==` finer, never turn false into true. Its two arms sit under different
       # key names, the shielding `__mint` uses, so a sealed-against-minted pair decides on the name
-      # set before either value is forced. A `//`-derived record (gen-schema's `refined` re-stamps
-      # `__mint` and keeps this field) can carry a `minted` payload beside a sealed `__mint`; that
-      # payload was certified inert at its base's own mint, so nothing detonates, and `payloadOf`
-      # refuses it because it is not the preimage of the digest the record carries.
+      # set before either value is forced. A `//`-derived record can carry a `minted` payload beside
+      # a different `__mint`; that payload was certified inert at its own mint, so nothing detonates,
+      # and `payloadOf` refuses it because it is not the preimage of the digest the record carries.
       #
       # ★ `payloadOf` INVOKES THE ONE MINTING AUTHORITY AND ADDS NONE: it re-runs `hashIdentity`
       # over this preimage and compares the result with `__mint.minted`, and nothing it computes
@@ -446,27 +608,40 @@ let
               inherit ctor;
             };
           };
+      __sealed = pre.sealed;
     }
     // (if memberList == [ ] then { } else { __okAt = guard.okAt; });
 
-  # A component that is itself a checker enters the preimage as its IDENTITY. A component with no
-  # mintable identity refuses the composite BY NAME rather than through a missing attribute, so
-  # what a reader sees is a refusal it can act on and not an evaluator message about an attrset.
-  #
-  # ★ ENTERING AS AN IDENTITY RATHER THAN AS A VALUE IS WHAT KEEPS TYPE NESTING OFF THE ENCODER'S
-  # BOUNDS. An identity is a fixed 69 characters whatever it stands for, so a composite's preimage
-  # is flat in the depth of the type it describes, and type nesting is bounded instead by
+  mkComposite =
+    ctor: members: mkArgs:
+    mkCompositeSealed ctor members mkArgs [ ];
+  mkCompositeSealed =
+    ctor: members: mkArgs: sealed: name0: verify:
+    let
+      # a combinator hands a RENDERER (budget -> string), a leaf or a nominal type its name
+      name = if isFunction name0 then name0 nameBudget else name0;
+      within = if isFunction name0 then name0 else leafWithin name0;
+    in
+    {
+      inherit name verify;
+      __nameWithin = within;
+      check =
+        v: v2:
+        let
+          e = verify v;
+        in
+        if e == null then v2 else throw e;
+      __name = baseName name;
+    }
+    // mkIdentity ctor members mkArgs sealed name;
+
+  # ★ A MEMBER ENTERS THE PREIMAGE AS ITS IDENTITY, AND THAT IS WHAT KEEPS TYPE NESTING OFF THE
+  # ENCODER'S BOUNDS. An identity is a fixed 69 characters whatever it stands for, so a composite's
+  # preimage is flat in the depth of the type it describes, and type nesting is bounded instead by
   # `typeIdentityDepth` above: a 128-deep `listOf` chain mints and separates from a 127-deep one,
   # and a 129-deep one is unmintable. gen-identity's own depth bound is still real and still
   # reachable — a 600-deep list handed to `enum` as a MEMBER is caller data, takes the full walk,
-  # and refuses.
-  idOf =
-    t:
-    if rewritesCheck t then
-      throw "identity: component type '${memberName "identity" t}' carries a `check' a wrapper rewrote, and a rewritten check has no mintable identity"
-    else
-      t.__mint.minted
-        or (throw "identity: component type '${memberName "identity" t}' has no mintable identity");
+  # and refuses. A member with no minted identity enters as `sealedMarker` (`tagOf`, above).
 
   # ★ A NAME THAT IS NOT A STRING REFUSES BY NAME WHERE IT IS READ. Every combinator renders a
   # member that carries no `__nameWithin` from its `name`, and four constructors (`typedef`, `typedef'`, `enum`,
@@ -585,43 +760,65 @@ let
   prim = name: pred: mkChecker "prim" name name (v: if pred v then null else typeError name v);
   prim' = name: verify: mkChecker "prim" name name verify;
 
+  # A caller's predicate is a FUNCTION (a lambda or a functor) or a registered construction, which
+  # is a functor too; anything else is refused by name, naming the door and the accepted forms.
+  predicateDoor =
+    door: name: what: f:
+    if prelude.isFunction f then
+      null
+    else
+      throw "gen-types: ${door}: the ${what} of type '${name}' must be a function or a registered construction (gen-algebra `mkIntensional`), but it is of type '${typeOf f}'";
+  # A constructor's own sealed argument for `mkIdentity`. A registered construction is handed over
+  # whole (its declared subject is what is compared); anything else keeps the slot it was passed in.
+  sealedArg = path: value: { inherit path value; };
+
   self = fix (checkers: {
     # ── custom-type constructors ──
 
     # Declare a type from an option<str> verifier (null on success, message on error).
     #
-    # ★ A CALLER-DECLARED TYPE IS SEALED, and that is ADR-0034's sealed limb rather than an
-    # omission here. The verifier is a caller-supplied lambda; Nix exposes no eliminator for a
-    # closure — no builtin reads a captured environment or a body — so no preimage over one can be
-    # TOTAL, and an identity minted over a partial preimage merges behaviourally distinct
-    # checkers. Minting over the NAME instead is the rejected remedy: it is a name-only identity at
-    # a site that mints, and two callers declaring "port" over different predicates would share it.
+    # ★ A CALLER-DECLARED PREDICATE IS A SEALED COMPONENT, and that is ADR-0034's per-component
+    # reading. The type MINTS over its constructor and its name, and the predicate enters as
+    # `sealedMarker` with its subject in `__sealed`: a caller lambda in its own slot, so one binding
+    # declared twice decides `true` and two separately written lambdas are refused by name (Nix
+    # exposes no eliminator for a closure, so no preimage over one is total); a REGISTERED
+    # construction (gen-algebra `mkIntensional`) as its declared subject, so two constructions of one
+    # term decide `true` and a different argument or revision `false`. Minting over the predicate is
+    # the rejected remedy: no total preimage exists for a lambda, and a registered digest is a
+    # decision predicate, never a key.
     #
-    # ★ WHAT WOULD HAVE TO CHANGE, named as the burden asymmetry requires: a caller whose predicate
-    # is a FIRST-ORDER TERM the substrate interprets — a constructor plus an inert argument, built
-    # through `mkChecker` — mints. That is the migration ADR-0034 requires and `refined` is the
-    # ecosystem's first case of. Until then `typeEq` DECIDES about such a type by comparing the
-    # reified record, which is finer than the name relation and never coarser.
+    # ★ THE DOOR TAKES A FUNCTION OR A REGISTERED CONSTRUCTION AND NOTHING ELSE, refused by name and
+    # catchably when the type is built: anything else would abort uncatchably at its first `verify`.
     typedef' =
       name0: verify:
       let
         name = callerName "typedef" name0;
       in
       seq name (
-        mkChecker "typedef"
-          (throw "identity: type '${name}' is declared from a caller-supplied verifier, which is a lambda and has no total preimage")
-          name
-          verify
+        seq (predicateDoor "typedef'" name "verifier" verify) (
+          mkCompositeSealed "typedef'" [ ] (_: {
+            inherit name;
+            verify = algebra.sealedMarker;
+          }) [ (sealedArg [ "verify" ] verify) ] name verify
+        )
       );
 
     # Declare a type from a bool predicate; the standard type-mismatch message is
-    # synthesized on failure. Sealed for the same reason as `typedef'`.
+    # synthesized on failure. The caller's predicate, not the synthesized verifier, is the sealed
+    # component, so one predicate declared twice is one type.
     typedef =
       name0: pred:
       let
         name = callerName "typedef" name0;
       in
-      checkers.typedef' name (v: if pred v then null else typeError name v);
+      seq name (
+        seq (predicateDoor "typedef" name "predicate" pred) (
+          mkCompositeSealed "typedef" [ ] (_: {
+            inherit name;
+            pred = algebra.sealedMarker;
+          }) [ (sealedArg [ "pred" ] pred) ] name (v: if pred v then null else typeError name v)
+        )
+      );
 
     # ── primitives (builtins.is* wrappers; `function`, `path`, `pathLike`: the nixpkgs predicates) ──
     # These take `prim` rather than the public `typedef`: their predicates are this library's, so
@@ -859,20 +1056,15 @@ let
           # different identity. They are booleans and enter the mint.
           #
           # ★★ `verify` IS WHERE THE PER-COMPONENT READING PAYS. It is a caller-supplied lambda, so
-          # a struct carrying one is SEALED — and a struct without one is MINTED, over its members'
-          # identities and its policy. The limb is per COMPONENT rather than per constructor, which
-          # is what stops one struct's extra invariant from dragging every struct onto the
-          # comparison limb. Nothing here tests for it: `verify = null` encodes and a lambda is
-          # refused by the encoder, so the two arms fall out of the mint's own totality.
-          mkComposite "struct" members (ids: {
-            inherit
-              name
-              total
-              unknown
-              verify
-              ;
+          # it is a SEALED component: the struct mints over its members' identities, its policy and
+          # `sealedMarker` in its place, and carries the lambda in `__sealed`. The limb is per
+          # COMPONENT rather than per constructor, which is what stops one struct's extra invariant
+          # from dragging every struct onto the comparison limb.
+          mkCompositeSealed "struct" members (ids: {
+            inherit name total unknown;
+            verify = if verify == null then null else algebra.sealedMarker;
             members = ids;
-          }) name verify'
+          }) (optional (verify != null) (sealedArg [ "verify" ] verify)) name verify'
           // {
             override = delta: build ({ inherit total unknown verify; } // delta);
           };
@@ -880,7 +1072,7 @@ let
       seq name (build { });
   });
 in
-# The checker set is the library's public surface; `mkChecker` and `idOf` are the identity core
+# The checker set is the library's public surface; `mkChecker` and `mkIdentity` are the identity core
 # the two fold-in files build on, and they are exported HERE rather than onto the set itself so
 # that reaching them stays a `lib/`-internal privilege. A fold-in constructor needs the same
 # by-construction identity every constructor above has — that is the whole point of there being
@@ -891,8 +1083,10 @@ in
   inherit
     mkChecker
     mkComposite
+    mkCompositeSealed
+    mkIdentity
     identityGuard
-    idOf
+    comparisonSubject
     verifiersOf
     rewritesCheck
     witnessedCheck
