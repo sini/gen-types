@@ -57,14 +57,14 @@ in
     expr = t.idOf { name = "foreign"; };
     expectedError = {
       type = "ThrownError";
-      msg = "^identity: type 'foreign' carries no `__mint`: it is no type record of this vocabulary, so it has no identity to demand$";
+      msg = "^gen-types: idOf: `foreign' carries no `__mint`: it is no type record of this vocabulary, so it has no identity to demand$";
     };
   };
   flake.testsError.types-identity.test-idOf-refuses-a-non-record = {
     expr = t.idOf 3;
     expectedError = {
       type = "ThrownError";
-      msg = "^identity: a int carries no `__mint`: it is no type record of this vocabulary, so it has no identity to demand$";
+      msg = "^gen-types: idOf: a int carries no `__mint`: it is no type record of this vocabulary, so it has no identity to demand$";
     };
   };
 
@@ -77,7 +77,7 @@ in
     };
     expectedError = {
       type = "ThrownError";
-      msg = "^identity: type 'half' carries a mint and no `__sealed`: its producer states no sealed components, so its mark cannot be read as an identity$";
+      msg = "^gen-types: idOf: `half' carries a mint and no `__sealed`: its producer states no sealed components, so its mark cannot be read as an identity$";
     };
   };
 

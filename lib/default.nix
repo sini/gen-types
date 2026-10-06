@@ -205,12 +205,12 @@ checkers
   idOf =
     t:
     if !(builtins.isAttrs t && t ? __mint && builtins.isAttrs t.__mint) then
-      throw "identity: ${
-        if builtins.isAttrs t then "type '${nameOf t}'" else "a ${builtins.typeOf t}"
+      throw "gen-types: idOf: ${
+        if builtins.isAttrs t then "`${nameOf t}'" else "a ${builtins.typeOf t}"
       } carries no `__mint`: it is no type record of this vocabulary, so it has no identity to demand"
     else if t.__mint ? minted then
       if !(t ? __sealed) then
-        throw "identity: type '${nameOf t}' carries a mint and no `__sealed`: its producer states no sealed components, so its mark cannot be read as an identity"
+        throw "gen-types: idOf: `${nameOf t}' carries a mint and no `__sealed`: its producer states no sealed components, so its mark cannot be read as an identity"
       else if t.__sealed == { } then
         t.__mint.minted
       else
