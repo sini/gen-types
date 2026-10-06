@@ -48,7 +48,17 @@ in
       t.idOf r;
     expectedError = {
       type = "ThrownError";
-      msg = "^identity: type '.*' has no identity to demand: a type nests deeper than the type-identity depth bound \\(128 levels\\); a self-referential type has no identity$";
+      msg = "^gen-types: idOf: type '.*' has no identity to demand: a type nests deeper than the type-identity depth bound \\(128 levels\\); a self-referential type has no identity$";
+    };
+  };
+
+  # a `//` copy carries its base's mark and so its base's digest: `idOf` refuses it by name, as `typeEq`,
+  # `identityOf` and `payloadOf` do, never answering the base's identity for a type that is not it
+  flake.testsError.types-identity.test-idOf-refuses-a-copy-of-a-type = {
+    expr = t.idOf (t.int // { verify = _: null; });
+    expectedError = {
+      type = "ThrownError";
+      msg = "^gen-types: idOf: `int' is a `//' copy or a wrapper that rewrote its check: its mark names its base, so it has no identity to demand$";
     };
   };
 
@@ -126,7 +136,7 @@ in
       t.idOf (t.listOf (own // { check = x: own.check x && x < 3; }));
     expectedError = {
       type = "ThrownError";
-      msg = "identity: type 'listOf<int>' has sealed component\\(s\\) 'members.0' \\(a caller-supplied lambda, a registered construction, or a type with no minted identity\\), which its mark is blind to: it is decided by `typeEq` and has no identity to demand";
+      msg = "gen-types: idOf: type 'listOf<int>' has sealed component\\(s\\) 'members.0' \\(a caller-supplied lambda, a registered construction, or a type with no minted identity\\), which its mark is blind to: it is decided by `typeEq` and has no identity to demand";
     };
   };
 

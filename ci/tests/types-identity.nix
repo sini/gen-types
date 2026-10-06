@@ -497,6 +497,16 @@ in
       };
     };
 
+  # ★ "idOf NEVER RE-MINTS" (den-hoag-6orb8 A1): a record whose stored mint is not the digest of its
+  # payload must answer the STORED string, since a re-mint answers the payload's digest instead. It has
+  # no `__typeSelf`, so it is a non-copy and reaches the projection. Reds on any guarded re-mint.
+  flake.tests.types-identity.test-idOf-answers-the-stored-mint-never-a-re-mint = {
+    expr = t.idOf (
+      removeAttrs t.int [ "__typeSelf" ] // { __mint.minted = "type:stored-not-the-payload-digest"; }
+    );
+    expected = "type:stored-not-the-payload-digest";
+  };
+
   # The compared subject excludes `__okAt` and nothing else: a field named `__id` is ordinary content
   # now that no producer carries a refusal under it. Reds on a build that still strips it.
   flake.tests.types-identity.test-comparison-subject-keeps-every-field-but-okAt = {

@@ -204,21 +204,27 @@ checkers
   # Deciding is not demanding: `typeEq` decides a type with no identity and never calls this.
   idOf =
     t:
+    let
+      # the construction's own name (`refined<int>`), not the base's `name` a refinement keeps
+      who = (t.functor or { }).name or (nameOf t);
+    in
     if !(builtins.isAttrs t && t ? __mint && builtins.isAttrs t.__mint) then
       throw "gen-types: idOf: ${
         if builtins.isAttrs t then "`${nameOf t}'" else "a ${builtins.typeOf t}"
       } carries no `__mint`: it is no type record of this vocabulary, so it has no identity to demand"
+    else if rewritesCheck t || !(stampOk t) then
+      throw "gen-types: idOf: `${nameOf t}' is a `//' copy or a wrapper that rewrote its check: its mark names its base, so it has no identity to demand"
     else if t.__mint ? minted then
       if !(t ? __sealed) then
         throw "gen-types: idOf: `${nameOf t}' carries a mint and no `__sealed`: its producer states no sealed components, so its mark cannot be read as an identity"
       else if t.__sealed == { } then
         t.__mint.minted
       else
-        throw "identity: type '${nameOf t}' has sealed component(s) ${
+        throw "gen-types: idOf: type '${who}' has sealed component(s) ${
           builtins.concatStringsSep ", " (map (k: "'${k}'") (builtins.attrNames t.__sealed))
         } (a caller-supplied lambda, a registered construction, or a type with no minted identity), which its mark is blind to: it is decided by `typeEq` and has no identity to demand"
     else
-      throw "identity: type '${nameOf t}' has no identity to demand: ${
+      throw "gen-types: idOf: type '${who}' has no identity to demand: ${
         let
           u = t.__mint.unmintable or null;
         in
