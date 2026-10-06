@@ -11,7 +11,7 @@
 let
   t = genTypes;
   refused = e: !(builtins.tryEval (builtins.deepSeq e e)).success;
-  # built at all: WHNF only, since a deep force reaches `__id`, which refuses on any sealed type
+  # built at all: WHNF only, so a refusal at construction is told from a value that merely holds one
   unbuilt = e: !(builtins.tryEval (builtins.seq e true)).success;
   basting = {
     revision = "r1";
@@ -157,13 +157,13 @@ in
     };
   };
 
-  # A type with a sealed component has a mark and no identity to DEMAND: `__id` refuses by name and
+  # A type with a sealed component has a mark and no identity to DEMAND: `idOf` refuses by name and
   # `payloadOf` refuses its payload, while the minted control answers both.
   flake.tests.types-identity-sealed.test-a-mark-beside-sealed-components-is-no-identity = {
     expr = {
-      id = refused (td r1).__id;
+      id = refused (t.idOf (td r1));
       payload = refused (t.payloadOf (td r1));
-      controlId = builtins.isString (t.listOf t.int).__id;
+      controlId = builtins.isString (t.idOf (t.listOf t.int));
       controlPayload = (t.payloadOf (t.listOf t.int)).ctor;
     };
     expected = {

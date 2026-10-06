@@ -69,11 +69,15 @@ Every constructor returns a record:
   __name;  # base name with polymorphic metadata stripped ("listOf")
   __nameWithin;  # budget -> the name within that many bytes; a combinator reads a member through it
   __mint;  # tagged identity regime: { minted = "type:<sha256>"; } | { unmintable = { ctor; reason; }; }
-  __id;    # the accessor for a consumer DEMANDING an identity: the minted value, or a named refusal (lazy)
   __payload;  # the mint's preimage, read-only, NOT identity: { minted = { ctor; args; }; } | { unmintable = { ctor; }; }
+  __sealed;  # the sealed components' comparison subjects, by path; { } where every component is minted or inert
   __okAt;  # composites only: the step-indexed guard bounding type nesting for the mint (see below)
 }
 ```
+
+Every field is total data, so `builtins.deepSeq` of any type record succeeds. A consumer that
+DEMANDS an identity calls `t.idOf`, a function, which answers the minted `"type:<sha256>"` or
+refuses by name (below).
 
 ```nix
 t.int.verify 5              # => null
@@ -238,11 +242,11 @@ them. The relation is Palmer's **conservative equality** (§2.3, §5.3 — his o
 "intensional" qualifies the *function*, never the equality), and it dispatches on the
 checker's identity REGIME rather than reading a single field:
 
-| regime     | the checker carries           | the relation                                    |
-| ---------- | ----------------------------- | ----------------------------------------------- |
-| minted     | `__mint.minted`               | digest equality                                 |
-| unmintable | `__mint`, no `minted`         | Nix `==` on the checker record **minus `__id`** |
-| unmigrated | no `__mint`, no `nestedTypes` | `name` equality                                 |
+| regime     | the checker carries           | the relation                                      |
+| ---------- | ----------------------------- | ------------------------------------------------- |
+| minted     | `__mint.minted`               | digest equality                                   |
+| unmintable | `__mint`, no `minted`         | Nix `==` on the checker record **minus `__okAt`** |
+| unmigrated | no `__mint`, no `nestedTypes` | `name` equality                                   |
 
 Every checker this library constructs is stamped. A nixpkgs `lib.types.*` record carries
 no `__mint` but does carry `nestedTypes`, and it takes the foreign rule below. So the
@@ -321,7 +325,7 @@ inert registered subject (two different registered constructions) and **refuse b
 (gen-algebra `sealedCollisionEq`). So one `typedef` binding declared twice, or two `refined` types over
 one stock refinement, is one type; two constructions of one registered term are one type and a
 different argument or revision is another; and two separately written lambdas are refused, because
-Nix exposes no eliminator for a closure and `==` cannot tell them from one. `__id` refuses a demand
+Nix exposes no eliminator for a closure and `==` cannot tell them from one. `idOf` refuses a demand
 while `__sealed` is non-empty, and `payloadOf` refuses such a record's payload. The identity half is
 exported as `mkIdentity ctor members mkArgs sealed name`, so a type built outside this library
 (gen-schema's `refined`) is identified by the same construction.
@@ -335,24 +339,16 @@ even against itself and the relation would be *empty* rather than finer. Finer i
 safe direction here — the failure a type discipline exists to exclude is admitting
 semantically distinct values under one type, i.e. answering **true** wrongly.
 
-It compares the record **minus `__id`** and minus nothing else it could detonate on; the type-nesting
-guard `__okAt` (below) is excluded too, on a different ground: it is total, but it is an accessor
-rather than distinguishing content, and comparing it would force its cells. `__id` is an accessor,
-not distinguishing content, and in this regime that accessor *is* the named refusal — so
-comparing the record whole would force the refusal inside the very decision it exists to
-permit, and the decision would detonate. Excluding the field rather than making it absent
-is what keeps the refusal reachable for a consumer that genuinely demands an identity.
+It compares the record **minus `__okAt`**, the type-nesting guard (below): it is total, but it is a
+guard rather than distinguishing content, and comparing it would force its cells. No field of a
+checker refuses when forced, so nothing else needs excluding. `__mint.minted` cannot detonate either:
+the minted and sealed arms live under *different key names*, and Nix `==` decides on the name set
+before forcing any value.
 
-**That one exclusion is sufficient, not arbitrary.** `__mint.minted` is the only other
-refusal-valued accessor, and it is shielded by the tagged sum's own shape: the minted and
-sealed arms live under *different key names*, and Nix `==` decides on the name set before
-forcing any value. The one path that does force a mint is a minted-against-minted
-comparison, which never reaches this arm — it compares digests, a genuine demand for an
-identity, where a catchable named refusal is the right outcome.
-
-`__id` is the accessor for a consumer that DEMANDS an identity: it yields the minted
-`"type:<sha256>"` — kind-tagged like every other identity the one mint issues — or it *is*
-the named refusal. A consumer that merely decides dispatches instead of demanding.
+`t.idOf` is how a consumer DEMANDS an identity: it yields the minted `"type:<sha256>"` — kind-tagged
+like every other identity the one mint issues — or refuses by name, catchably. It is a projection
+over the cached `__mint` and `__sealed` and never re-mints, so a repeated demand hashes nothing. A
+consumer that merely decides dispatches instead of demanding.
 
 ```nix
 t.typeEq (t.listOf t.int) (t.listOf t.int)          # => true
@@ -362,7 +358,7 @@ t.typeEq (t.refined t.int r.positive)
          (t.refined t.int r.tcpPort)                # => false  (the messages differ in the mark)
 t.typeEq (t.refined t.int r.positive)
          (t.refined t.int r.positive)               # => true   (one stock `check`, one slot)
-(t.refined t.int r.positive).__id                   # => throws: sealed component(s) 'refinements.0'
+t.idOf (t.refined t.int r.positive)                 # => throws: sealed component(s) 'refinements.0'
 ```
 
 **A self-referential or over-deep type has no identity, and says so catchably.** A member
@@ -375,15 +371,15 @@ does. Reads strictly descend, so a cycle bottoms out at index 0 instead of re-en
 mint, and the cells are memoised per node, so the cost is linear in the type graph and never in
 its expansion. A cycle and a type nested deeper than 128 levels take the same regime as a
 sealed checker: tagged `unmintable`, decided by `typeEq` over the record, and refused by name
-when `__id` is demanded. A type between 129 and about 900 deep therefore compares rather than
+when its identity is demanded. A type between 129 and about 900 deep therefore compares rather than
 mints, and gen-merge refuses an identical redeclaration of one by name rather than merging it.
 
 ```nix
 let r = t.union [ t.int (t.listOf r) ]; in
 r.__mint                                            # => { unmintable = { ctor = "union"; … }; }
 t.typeEq r r                                        # => true   (the same binding)
-r.__id                                              # => throws: a type nests deeper than the
-                                                    #    type-identity depth bound (128 levels); …
+t.idOf r                                            # => throws: … has no identity to demand: a type nests
+                                                    #    deeper than the type-identity depth bound (128 levels); …
 ```
 
 ### Reading a construction back
@@ -392,7 +388,7 @@ r.__id                                              # => throws: a type nests de
 over, `{ ctor; args; }` — and it answers only where that payload re-mints to the digest the
 record carries. A sealed checker, a foreign record, and a `//`-derived record carrying its
 base's payload under a digest of its own are refused by name, catchably. The payload is
-read-only and **bears no identity**: `__mint` decides whether two types are one, and `__id`
+read-only and **bears no identity**: `__mint` decides whether two types are one, and `idOf`
 answers a demand for an identity.
 A composite's `args` hold its members' identities, never the member checkers. Each read
 re-runs one `hashIdentity` over the preimage.
@@ -463,7 +459,7 @@ derived field reaches it.
 The checker record *is* the contract. A merge engine consumes a checker as a leaf's
 option type: after merging definitions it calls `t.verify mergedValue` (`null` = ok,
 else a blame string) and `t.typeEq` to decide whether two option declarations carry the
-same type. **`typeEq`, not `__id`** — deciding is not demanding, and a sealed checker has
+same type. **`typeEq`, not `idOf`** — deciding is not demanding, and a sealed checker has
 an identity to refuse but a record to compare. Where two declarations differ, gen-merge reads
 both constructions through `payloadOf` to decide whether a reconciliation law applies
 (today: two same-named `enum`s merge to their union). gen-types stays free of any merge/priority

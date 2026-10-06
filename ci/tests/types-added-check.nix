@@ -74,6 +74,7 @@ in
       "float"
       "formatErrors"
       "function"
+      "idOf"
       "identityGuard"
       "int"
       "intersection"

@@ -6,7 +6,7 @@
 # blames the value on mismatch — restricted to a first-order, allocation-frugal
 # core so it stays a single eval pass on the happy path.
 #
-# Every checker is a record { name; verify; check; __name; __nameWithin; __mint; __id; __payload; }:
+# Every checker is a record { name; verify; check; __name; __nameWithin; __mint; __payload; __sealed; }:
 #   name    — full structural name, e.g. "listOf<int>", within `renderBudget` bytes
 #   verify  — value -> null | errString   (null = ok)
 #   check   — v: v2: throws verify's error on failure, returns v2 on success
@@ -17,8 +17,8 @@
 #             than over the name: { minted = "type:<digest>"; } where the constructor's
 #             arguments are inert, { unmintable = { ctor; reason; }; } where one of them
 #             is a caller-supplied lambda. This is what the equality relation reads.
-#   __id    — the accessor for a consumer that DEMANDS an identity: the minted value, or
-#             the mint's own named refusal. Lazy, and never what the relation reads.
+#             A consumer that DEMANDS an identity calls `idOf` (`lib/default.nix`), a projection
+#             over this field and `__sealed`; no field of a checker refuses when forced.
 #   __payload — the construction the mint hashed, READ-ONLY and NON-IDENTITY-BEARING, as a total
 #             tagged sum: { minted = { ctor; args; }; } where `__mint` is minted,
 #             { unmintable = { ctor; }; } where it is not. Read it through `payloadOf`, which
@@ -284,7 +284,7 @@ let
   # not catch — and an acyclic chain about 950 deep overflows the stack. ADR-0034 puts both outside
   # the mint ("every self-referential value … The budget's refusal point is CHOSEN"), so such a type
   # takes the COMPARED regime: `__mint` is tagged `unmintable`, `typeEq` decides over the record, and
-  # demanding `__id` is the named refusal below. Bounds rather than detection, as in gen-identity's
+  # demanding its identity (`idOf`) is the named refusal below. Bounds rather than detection, as in gen-identity's
   # own header: Nix has no observation that two visited nodes are one, so a cycle and an over-deep
   # type are one refusal.
   #
@@ -310,7 +310,8 @@ let
   # MINTED to COMPARED, and at gen-merge an identical redeclaration of such a type is refused by name
   # rather than merged.
   typeIdentityDepth = 128;
-  depthRefusal = throw "identity: a type nests deeper than the type-identity depth bound (${toString typeIdentityDepth} levels); a self-referential type has no identity";
+  depthReason = "a type nests deeper than the type-identity depth bound (${toString typeIdentityDepth} levels); a self-referential type has no identity";
+  depthRefusal = throw "identity: ${depthReason}";
   #
   # ★ THE STREAM ENDS AT INDEX 0 (`next = null`), which no read reaches because the cell at 0 holds
   # without reading its members. An unending stream would make `deepSeq` of every composite type
@@ -327,8 +328,8 @@ let
     next = if k == 0 then null else step (k - 1) (map (c: c.next) cells);
   };
   # The guard over a construction's members, for every producer that mints over a member's `__mint`:
-  # `okAt` is what the producer carries as `__okAt`, `ok` gates its mint, and `refusal` is its
-  # `__id` when `ok` fails. A producer that mints over members and carries no `__okAt` reopens the
+  # `okAt` is what the producer carries as `__okAt`, `ok` gates its mint, and `refusal` is the named
+  # refusal when `ok` fails (`reason` is its text, which an unmintable `__mint` carries). A producer that mints over members and carries no `__okAt` reopens the
   # blackhole for any cycle through it.
   identityGuard =
     members:
@@ -339,43 +340,21 @@ let
       inherit okAt;
       ok = members == [ ] || okAt.ok;
       refusal = depthRefusal;
+      reason = depthReason;
     };
 
-  # The comparison SUBJECT for the sealed arm: the reified record MINUS its two accessors,
-  # `__id` and `__okAt`, and minus nothing else — preceded by its own closure fields (below).
+  # The comparison SUBJECT for the sealed arm: the reified record MINUS `__okAt`, and minus nothing
+  # else — preceded by its own closure fields (below). A checker carries no refusal-valued field:
+  # demanding an identity is `idOf`, a function, so nothing a comparison forces detonates.
+  # `__mint.minted` cannot refuse inside one either: the minted and sealed arms live under DIFFERENT
+  # KEY NAMES, and Nix `==` decides on the name set before forcing any value (measured, with its
+  # control: a throwing payload under a differently-named key is never reached, while the SAME name on
+  # both sides DOES force).
   #
-  # ★ `__id` IS AN ACCESSOR, NOT DISTINGUISHING CONTENT, and in the sealed regime that
-  # accessor IS the named refusal. Comparing the record without excluding it forces the
-  # refusal inside a decision the refusal exists to permit, and the decision detonates.
-  # Measured on a sealed checker carrying a throwing `__id`: self-comparison of the
-  # unexcluded record ABORTS, and a distinct pair survives only because a lambda-valued
-  # attribute happens to be compared first and short-circuits — an ordering accident,
-  # not a property. Excluding the accessor removes both.
-  #
-  # ★ The alternative — making `__id` ABSENT on a sealed checker — is rejected: it would
-  # delete the named refusal a consumer that DEMANDS an identity must receive, trading a
-  # detonation for a silent missing attribute.
-  #
-  # `removeAttrs` preserves the evaluator's cell fast path (measured: a record compared
-  # with itself through it stays equal, two separately-built records stay unequal, and
-  # on a record with no `__id` it is a byte-for-byte no-op), so this excludes the
-  # accessor without emptying the relation.
-  #
-  # ★ WHY EXCLUDING `__id` IS SUFFICIENT AND NOT ARBITRARY. It is the only OTHER
-  # refusal-valued accessor a compared value can carry, because `__mint.minted` is
-  # shielded by the tagged sum's own shape: the minted and sealed arms live under
-  # DIFFERENT KEY NAMES, and Nix `==` decides on the name set before forcing any value.
-  # Measured, with its control: a throwing payload under a differently-named key is
-  # never reached, while the SAME name on both sides DOES force — so the short-circuit
-  # is the name check, not throws being ignored. Two sealed values carry inert payloads
-  # under one name, so nothing forces there either. The one path that does force a mint
-  # is a minted-against-minted comparison, and that arm never reaches here: it compares
-  # digests, which is a genuine DEMAND for an identity, where a catchable named refusal
-  # is the correct outcome rather than a hazard.
-  #
-  # ★ `__okAt` IS EXCLUDED BESIDE IT, on a different ground: it is total (a cyclic type's stream
-  # bottoms out at index 0), so nothing detonates, but it is an accessor rather than distinguishing
-  # content, and comparing it would force up to `typeIdentityDepth + 1` cells of each side.
+  # ★ `__okAt` IS EXCLUDED: it is total (a cyclic type's stream bottoms out at index 0), so nothing
+  # detonates, but it is a guard rather than distinguishing content, and comparing it would force up
+  # to `typeIdentityDepth + 1` cells of each side. `removeAttrs` preserves the evaluator's cell fast
+  # path (a record compared with itself through it stays equal).
   #
   # ★ CLOSURES FIRST (`den-hoag-6xj95`; ADR-0034's compared limb). The subject is a two-element
   # list: `K`, the record's declared closure fields that are present as functions, then the whole
@@ -423,10 +402,7 @@ let
       v.__mint.unmintable.subject
     else
       let
-        s = removeAttrs v [
-          "__id"
-          "__okAt"
-        ];
+        s = removeAttrs v [ "__okAt" ];
         # The closure fields declared by every record producer: nixpkgs' and gen-merge's
         # `mkOptionType`, and this library's `mkChecker`/`mkComposite`.
         sealedKeys = filter (n: s ? ${n} && isFunction s.${n}) [
@@ -458,7 +434,7 @@ let
   # `comparisonSubject` of it (closures first), a lambda in its own slot, a registered construction
   # as `{ compared = <its declared subject>; }`, and a minted member that itself seals something as
   # its own `__sealed` (PROPAGATION). The mark is blind to all of it, so it is NEVER a key on its own:
-  # `typeEq` decides over both (`sealedCollisionEq`), `__id` refuses a demand while `__sealed` is
+  # `typeEq` decides over both (`sealedCollisionEq`), `idOf` refuses a demand while `__sealed` is
   # non-empty, and `payloadOf` refuses to read a payload that is not a total preimage.
   #
   # ★ THE PREIMAGE IS THE ONE IT WAS FOR A TYPE WHOSE COMPONENTS ARE ALL MINTED OR INERT: a member's
@@ -472,8 +448,9 @@ let
   # constructor's own sealed arguments, `{ path = [ <segment> ]; value; }`, each of which `mkArgs`
   # places as `sealedMarker`.
   #
-  # Returns the identity fields: `__mint`, `__id`, `__payload`, `__sealed`, and `__okAt` on a
-  # composite. `name` words the refusals.
+  # Returns the identity fields: `__mint`, `__payload`, `__sealed`, and `__okAt` on a composite, each
+  # TOTAL under `deepSeq`. `name` words nothing here: `idOf` words a refusal from the record's own
+  # `name`.
   isSealedMember =
     t: !(isAttrs t) || rewritesCheck t || !(t ? __mint && isAttrs t.__mint && t.__mint ? minted);
   tagOf = t: if isSealedMember t then algebra.sealedMarker else t.__mint.minted;
@@ -536,13 +513,12 @@ let
     {
       # ★ `__mint` IS A TAGGED SUM AND IT IS TOTAL — every checker carries it, and a reader
       # dispatches on the TAG rather than branching on the field's presence. The relation in
-      # `lib/default.nix` reads this and never `__id`.
+      # `lib/default.nix` reads it, and `idOf` answers a DEMAND from it and `__sealed` alone.
       #
-      # The sealed arm carries the constructor and points at the accessor rather than restating the
-      # reason: `__id` re-runs the same mint UNCAUGHT, so a reader that wants the cause gets the
-      # refusal that actually fired instead of a paraphrase kept in step by hand. It is reached by a
-      # type past the type-identity bound, and by arguments the encoder refuses outside the
-      # constructor's declared sealed ones (an `enum` over a path).
+      # The sealed arm carries the constructor and the cause `idOf` words its refusal with: a type
+      # past the type-identity bound, or arguments the encoder refuses outside the constructor's
+      # declared sealed ones (an `enum` over a path). The encoder's own message is not kept: `tryEval`
+      # does not surface it, and re-running the mint to raise it is the re-mint `idOf` never does.
       __mint =
         if attempt.success then
           { minted = attempt.value; }
@@ -550,29 +526,18 @@ let
           {
             unmintable = {
               inherit ctor;
-              reason = "the mint refuses this construction's arguments; demand `__id` for its named refusal";
+              reason =
+                if guard.ok then
+                  "the mint refuses this construction's arguments (a path, a value past the encoder's bounds, or another argument that is not inert)"
+                else
+                  guard.reason;
             };
           };
-
-      # `__id` is the ACCESSOR a consumer reads when it DEMANDS an identity — it returns the
-      # minted value, and on a value with no exact identity it IS the named refusal. It is LAZY, so
-      # a consumer that never demands one never hashes; and it is deliberately NOT what the
-      # equality relation reads, because demanding an identity of a sealed value is a refusal while
-      # DECIDING about one is not. A mark beside a non-empty `__sealed` is not an exact identity.
-      __id =
-        if !guard.ok then
-          guard.refusal
-        else if pre.sealed != { } then
-          throw "identity: type '${name}' has sealed component(s) ${
-            concatStringsSep ", " (map (k: "'${k}'") (attrNames pre.sealed))
-          } (a caller-supplied lambda, a registered construction, or a type with no minted identity), which its mark is blind to: it is decided by `typeEq` and has no identity to demand"
-        else
-          mint;
 
       # ★ `__payload` IS THE MINT'S OWN PREIMAGE, RETAINED READ-ONLY, AND IT BEARS NO IDENTITY
       # (owner ruling on den-hoag-parametric-merge-unlock-6wb87, 2026-08-27; design of record
       # den-ag-design `reports/den-hoag-nqhoa-readsurface-spec-v0.md`). Identity stays with
-      # `__mint.minted`, and `__id` answers every demand for one; a reader treating this field as
+      # `__mint.minted`, and `idOf` answers every demand for one; a reader treating this field as
       # identity re-opens the name-vs-structure confusion the construction mint closed. It is
       # never a key and enters no mint.
       #

@@ -7,9 +7,9 @@
 # notion whatsoever; the type value is a pure predicate boundary.
 #
 # The handoff contract is the checker record itself — { name; verify; check; __name;
-# __nameWithin; __mint; __id; __payload } — so gen-merge calls `t.verify` on a merged leaf value (null = ok, else
-# a blame string). `t.typeEq` decides whether two checkers carry the same type — `typeEq` and
-# not `__id`: deciding is not demanding, and a checker whose content is sealed has an identity
+# __nameWithin; __mint; __payload; __sealed } — so gen-merge calls `t.verify` on a merged leaf value (null = ok,
+# else a blame string). `t.typeEq` decides whether two checkers carry the same type — `typeEq` and
+# not `idOf`: deciding is not demanding, and a checker whose content is sealed has an identity
 # to REFUSE but a record to compare.
 # gen-types is a self-contained LEAF: it must import WITHOUT any registry above
 # it, which is why it lives in its own flake rather than inside gen-schema.
@@ -48,9 +48,9 @@ let
   # `__mint` is a TAGGED SUM, so no reader may branch on FIELD PRESENCE and then read
   # `.minted` raw: on a value that has no mintable identity `v ? __mint` holds and
   # `.minted` is absent, and that read aborts uncatchably rather than refusing. That is
-  # also why the readers below stop reading `__id`: `__id` is the accessor for a
-  # consumer that DEMANDS an identity, and demanding one of a sealed checker is a
-  # refusal — so a reader that DECIDES must dispatch on the tag instead of demanding.
+  # also why the readers below never call `idOf`: `idOf` is the DEMAND for an identity,
+  # and demanding one of a sealed checker is a refusal — so a reader that DECIDES must
+  # dispatch on the tag instead of demanding.
   #
   #   minted     — an identity over a preimage total in the checker's distinguishing
   #                content; the digests decide.
@@ -59,7 +59,7 @@ let
   #   unmigrated — the migration window: no producer has stamped this checker, so its
   #                name is still all the decision has. This arm stays live until the
   #                producer lands, and while it is live the relation is byte-for-byte
-  #                the shipped one — `__id` was a pure function of `name`.
+  #                the shipped one — identity was then a pure function of `name`.
   identityOf =
     v:
     # a record whose `check` a wrapper rewrote keeps its base's `__mint`, which no longer states
@@ -189,6 +189,47 @@ checkers
   typeEq = conservativeEq;
   inherit conservativeEq;
 
+  # ── the identity DEMAND (den-hoag-6orb8 A1) ──
+  # `idOf t` is the one way to DEMAND a type's identity: its minted digest where the record has an
+  # exact one, and a refusal BY NAME, catchably, where it has none. A record's fields are total data
+  # and a partial operation is a function, so no field refuses when forced and `deepSeq` of any type
+  # record is safe; this is where the refusal lives instead.
+  #
+  # ★ A PURE PROJECTION over the two cached total fields `__mint` and `__sealed`: it never re-mints,
+  # so a repeated demand costs no `hashIdentity` (an idOf re-minting per call measured 86–5,026
+  # thunks per demand, den-ag-design `reports/den-hoag-6orb8-id-perf-scout-v0.md`). Every producer
+  # of a minted type states `__sealed`, so it is read directly; a minted record without one is
+  # refused by name, never read as `{ }`.
+  #
+  # Deciding is not demanding: `typeEq` decides a type with no identity and never calls this.
+  idOf =
+    t:
+    if !(builtins.isAttrs t && t ? __mint && builtins.isAttrs t.__mint) then
+      throw "identity: ${
+        if builtins.isAttrs t then "type '${nameOf t}'" else "a ${builtins.typeOf t}"
+      } carries no `__mint`: it is no type record of this vocabulary, so it has no identity to demand"
+    else if t.__mint ? minted then
+      if !(t ? __sealed) then
+        throw "identity: type '${nameOf t}' carries a mint and no `__sealed`: its producer states no sealed components, so its mark cannot be read as an identity"
+      else if t.__sealed == { } then
+        t.__mint.minted
+      else
+        throw "identity: type '${nameOf t}' has sealed component(s) ${
+          builtins.concatStringsSep ", " (map (k: "'${k}'") (builtins.attrNames t.__sealed))
+        } (a caller-supplied lambda, a registered construction, or a type with no minted identity), which its mark is blind to: it is decided by `typeEq` and has no identity to demand"
+    else
+      throw "identity: type '${nameOf t}' has no identity to demand: ${
+        let
+          u = t.__mint.unmintable or null;
+        in
+        if builtins.isAttrs u && builtins.isString (u.reason or null) then
+          u.reason
+        else if builtins.isString u then
+          u
+        else
+          "its `__mint` is not minted"
+      }";
+
   # ── the construction-payload reader ──
   # The ONE reader of `__payload` (lib/checkers.nix, `mkComposite`): it answers `{ ctor; args; }`
   # only where that payload is the PREIMAGE OF THE DIGEST THE RECORD CARRIES, and refuses by name,
@@ -196,7 +237,7 @@ checkers
   # carrying its base's payload under a digest of its own. Re-minting ties the payload to the
   # digest by construction, so no producer's strip list is kept in step by hand; it invokes the
   # one minting authority and adds none. The answer is read-only and bears no identity: `__mint`
-  # decides identity and `__id` answers a demand for it.
+  # decides identity and `idOf` answers a demand for it.
   payloadOf =
     t:
     let
@@ -236,7 +277,7 @@ checkers
 
   # ── the per-component identity, for a producer outside this library ──
   # `mkIdentity ctor members mkArgs sealed name` returns the identity fields every constructor here
-  # carries (`__mint`, `__id`, `__payload`, `__sealed`, and `__okAt` on a composite), so a type built
+  # carries (`__mint`, `__payload`, `__sealed`, and `__okAt` on a composite), so a type built
   # elsewhere (gen-schema's `refined`) is identified by the same construction and decided by the same
   # `typeEq`. See `mkIdentity` in `./checkers.nix`.
   inherit mkIdentity comparisonSubject;

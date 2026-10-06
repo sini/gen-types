@@ -1,6 +1,6 @@
 # A self-referential or over-deep type has NO IDENTITY, and says so catchably (ADR-0034's excluded
 # populations): the step-indexed guard in lib/checkers.nix (`identityGuard`) tags it `unmintable`,
-# `typeEq` decides over the record, and demanding `__id` is the named refusal. On the tree before it,
+# `typeEq` decides over the record, and demanding its identity (`idOf`) is the named refusal. On the tree before it,
 # every cycle below re-entered its own memoised mint (an uncatchable `infinite recursion`) and the
 # 1000-deep chain overflowed the stack.
 { genTypes, ... }:
@@ -104,7 +104,7 @@ in
     ];
   };
   flake.tests.types-recursive-identity.test-demanding-a-cyclic-identity-refuses-catchably = {
-    expr = map (v: (builtins.tryEval v.__id).success) [
+    expr = map (v: (builtins.tryEval (genTypes.idOf v)).success) [
       r
       s
       holder
@@ -163,8 +163,8 @@ in
   # lives on composites only
   flake.tests.types-recursive-identity.test-control-acyclic-digests-unchanged = {
     expr = {
-      flat = flat.__id;
-      int = int.__id;
+      flat = genTypes.idOf flat;
+      int = genTypes.idOf int;
       rebuild = typeEq flat (union [
         int
         (listOf int)

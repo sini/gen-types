@@ -1,4 +1,4 @@
-# gen-types: checker identity — __name, __id, and conservative equality (typeEq /
+# gen-types: checker identity — __name, idOf, and conservative equality (typeEq /
 # conservativeEq), which dispatches on the checker's identity REGIME.
 { genTypes, lib, ... }:
 let
@@ -11,24 +11,16 @@ let
   # digest pair the constructors cannot be made to produce, and a sealed record whose
   # accessor detonates on contact.
   #
-  # ★ THESE ARE SITE-7 SHAPED, AND CARRYING `__id` IS THE POINT. The producer keeps
-  # `__id` as the accessor a consumer reads when it DEMANDS an identity: it returns the
-  # minted value, or it IS the named refusal. So a sealed checker carries a THROWING
-  # `__id`, and the sealed arm must decide without forcing it — which is why
-  # `conservativeEq` compares the record minus that one field.
-  #
-  # Fixtures that omitted `__id` could not have caught this, and the reason is worth
-  # recording: the design's own note that `__id` "stays lazy, so it is invisible to
-  # consumers that do not read it" is what made a comparison look safe — a comparison IS
-  # a consumer, and it reads every field. A spec-trail append recording that is OWED;
-  # the spec is not edited from here.
+  # ★ A CHECKER'S FIELDS ARE TOTAL DATA. A consumer that DEMANDS an identity calls `idOf`, a
+  # projection over `__mint` and `__sealed`, so no fixture carries a field that refuses when
+  # forced: a comparison IS a consumer, and it reads every field (den-hoag-6orb8 A1).
   mkMinted = n: digest: {
     name = n;
     __name = n;
     verify = _: null;
     check = v: _: v;
     __mint.minted = digest;
-    __id = digest;
+    __sealed = { };
   };
   mkUnmintable = n: {
     name = n;
@@ -39,15 +31,14 @@ let
       reason = "the refinement predicate is a caller-supplied lambda";
       ctor = n;
     };
-    __id = throw "identity: '${n}' has no mintable identity";
   };
-  # CONTROL fixture: a minted checker whose accessor would detonate if read. The minted
-  # arm decides on digests and must never reach it.
-  mkMintedPoisonedId =
+  # CONTROL fixture: a minted checker carrying a field that would detonate if read. The minted
+  # arm decides on digests and must never reach the record.
+  mkMintedPoisoned =
     n: digest:
     (mkMinted n digest)
     // {
-      __id = throw "identity: the minted arm must not force __id";
+      zz = throw "the minted arm must not force the record";
     };
   mintedChecker = mkMinted;
   unmintableChecker = mkUnmintable "refined<str>";
@@ -89,8 +80,8 @@ in
   # long it is, and would pass for any other five-character prefix.
   flake.tests.types-identity.test-id-is-kind-tagged-sha256 = {
     expr = {
-      shape = builtins.match "type:[0-9a-f]{64}" t.int.__id != null;
-      length = builtins.stringLength t.int.__id;
+      shape = builtins.match "type:[0-9a-f]{64}" (t.idOf t.int) != null;
+      length = builtins.stringLength (t.idOf t.int);
     };
     expected = {
       shape = true;
@@ -259,20 +250,19 @@ in
     };
   };
 
-  # A sealed construction gets NO identity and a NAMED refusal when one is demanded — the
-  # refusal being reachable is what rules out the alternative of dropping `__id`, which
-  # would trade a detonation for a silent missing attribute. These are the SHIPPED
+  # A sealed construction gets NO identity and a NAMED refusal when one is demanded through
+  # `idOf`, a function, so the record itself stays total under `deepSeq`. These are the SHIPPED
   # constructors rather than fixtures, so the cell fails if a constructor quietly starts
   # minting over a partial preimage.
   flake.tests.types-identity.test-sealed-constructions-refuse-when-an-identity-is-demanded = {
     expr = {
-      refined = evaluates (t.refined t.int r.positive).__id;
-      structWithCallerVerify = evaluates ((t.struct "s" { }).override { verify = _: null; }).__id;
-      callerTypedef = evaluates (t.typedef "port" (v: v > 0)).__id;
+      refined = evaluates (t.idOf (t.refined t.int r.positive));
+      structWithCallerVerify = evaluates (t.idOf ((t.struct "s" { }).override { verify = _: null; }));
+      callerTypedef = evaluates (t.idOf (t.typedef "port" (v: v > 0)));
       # CONTROL, same run: the same demand on a minted checker returns a kind-tagged
       # identity cleanly, so these refusals are the sealed regime and not a broken mint.
       mintedStillAnswers =
-        builtins.match "type:[0-9a-f]{64}" (t.struct "cfg" { a = t.int; }).__id != null;
+        builtins.match "type:[0-9a-f]{64}" (t.idOf (t.struct "cfg" { a = t.int; })) != null;
     };
     expected = {
       refined = false;
@@ -337,40 +327,36 @@ in
   };
 
   # A checker that declares it has no mintable identity must be DECIDED, never
-  # detonate. `__id` is the accessor for a consumer that DEMANDS an identity and
-  # refuses when there is none; a consumer that decides dispatches instead.
-  #
-  # ★ THIS IS THE CELL THE UNEXCLUDED FORM ABORTS ON. Comparing the record whole forces
-  # every field, `__id` among them, and in this regime `__id` IS the refusal — so the
-  # decision detonates on the value the refusal exists to let it decide.
+  # detonate. `idOf` is the DEMAND, and refuses when there is no identity; a consumer that
+  # decides dispatches on `__mint` instead, and compares a record none of whose fields refuses.
   flake.tests.types-identity.test-unmintable-self-eq = {
     expr = t.typeEq unmintableChecker unmintableChecker;
     expected = true;
   };
 
-  # The refusal must stay REACHABLE for a consumer that DEMANDS an identity. This is
-  # what rules out the other remedy — making `__id` absent on a sealed checker would
-  # trade a detonation for a silent missing attribute and delete the named refusal.
+  # The refusal stays REACHABLE for a consumer that DEMANDS an identity, through `idOf`, and the
+  # record carries no field that refuses: the retired `__id` accessor is absent from what the
+  # shipped constructor builds (den-hoag-6orb8 A1; pre-release, no tombstone).
   flake.tests.types-identity.test-unmintable-id-still-refuses-by-name = {
     expr = {
-      carriesTheAccessor = unmintableChecker ? __id;
-      demandingItRefuses = !(evaluates unmintableChecker.__id);
+      carriesNoAccessor = !((t.typedef "port" (v: v > 0)) ? __id);
+      demandingItRefuses = !(evaluates (t.idOf unmintableChecker));
       # CONTROL: the same demand on a minted checker returns the identity cleanly.
-      mintedDemandSucceeds = (mkMinted "a" "type:dddd").__id;
+      mintedDemandSucceeds = t.idOf (mkMinted "a" "type:dddd");
     };
     expected = {
-      carriesTheAccessor = true;
+      carriesNoAccessor = true;
       demandingItRefuses = true;
       mintedDemandSucceeds = "type:dddd";
     };
   };
 
-  # CONTROL: the minted arm decides on digests and never reaches the accessor — proven
-  # by poisoning it. A run where this throws means the minted arm fell through.
-  flake.tests.types-identity.test-minted-arm-never-forces-id = {
+  # CONTROL: the minted arm decides on digests and never reaches the record — proven
+  # by poisoning a field. A run where this throws means the minted arm fell through.
+  flake.tests.types-identity.test-minted-arm-never-forces-the-record = {
     expr = {
-      equal = t.typeEq (mkMintedPoisonedId "a" "type:dddd") (mkMintedPoisonedId "b" "type:dddd");
-      distinct = t.typeEq (mkMintedPoisonedId "a" "type:dddd") (mkMintedPoisonedId "a" "type:eeee");
+      equal = t.typeEq (mkMintedPoisoned "a" "type:dddd") (mkMintedPoisoned "b" "type:dddd");
+      distinct = t.typeEq (mkMintedPoisoned "a" "type:dddd") (mkMintedPoisoned "a" "type:eeee");
     };
     expected = {
       equal = true;
@@ -469,5 +455,62 @@ in
   flake.tests.types-identity.test-foreign-path-family-not-falsely-unified = {
     expr = t.typeEq ft.path ft.pathInStore;
     expected = false;
+  };
+
+  # ★ den-hoag-6orb8 A1: A TYPE RECORD CARRIES NO `__id` FIELD, so `deepSeq` of every shipped
+  # construction is total, the sealed ones included (each threw under `deepSeq` while the field was
+  # the refusal). The demand moved to `idOf`, which answers exactly what the cached `__mint` holds.
+  # Reds on a producer that carries the retired field again.
+  flake.tests.types-identity.test-a-type-record-is-total-under-deepSeq =
+    let
+      shapes = {
+        int = t.int;
+        listOfInt = t.listOf t.int;
+        typedef = t.typedef "port" (v: v > 0);
+        listOfTypedef = t.listOf (t.typedef "port" (v: v > 0));
+        refined = t.refined t.int r.positive;
+        structOverride = (t.struct "s" { }).override { verify = _: null; };
+        enum = t.enum "e" [ "a" ];
+      };
+    in
+    {
+      expr = {
+        carriesNoId = builtins.all (v: !(v ? __id)) (builtins.attrValues shapes);
+        deepForces = builtins.mapAttrs (_: v: (builtins.tryEval (builtins.deepSeq v true)).success) shapes;
+        # the demand is a projection: it answers the cached mint itself
+        idOfIsTheMint = t.idOf t.int == t.int.__mint.minted;
+        sealedRefused = evaluates (t.idOf shapes.listOfTypedef);
+      };
+      expected = {
+        carriesNoId = true;
+        deepForces = {
+          int = true;
+          listOfInt = true;
+          typedef = true;
+          listOfTypedef = true;
+          refined = true;
+          structOverride = true;
+          enum = true;
+        };
+        idOfIsTheMint = true;
+        sealedRefused = false;
+      };
+    };
+
+  # The compared subject excludes `__okAt` and nothing else: a field named `__id` is ordinary content
+  # now that no producer carries a refusal under it. Reds on a build that still strips it.
+  flake.tests.types-identity.test-comparison-subject-keeps-every-field-but-okAt = {
+    expr =
+      let
+        s = builtins.elemAt (t.comparisonSubject (t.listOf t.int // { __id = "kept"; })) 1;
+      in
+      {
+        id = s.__id or null;
+        okAt = s ? __okAt;
+      };
+    expected = {
+      id = "kept";
+      okAt = false;
+    };
   };
 }

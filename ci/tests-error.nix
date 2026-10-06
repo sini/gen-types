@@ -45,10 +45,39 @@ in
           (t.listOf r)
         ];
       in
-      r.__id;
+      t.idOf r;
     expectedError = {
       type = "ThrownError";
-      msg = "identity: a type nests deeper than the type-identity depth bound \\(128 levels\\); a self-referential type has no identity";
+      msg = "^identity: type '.*' has no identity to demand: a type nests deeper than the type-identity depth bound \\(128 levels\\); a self-referential type has no identity$";
+    };
+  };
+
+  # `idOf` refuses by name a value carrying no `__mint`: a foreign record, and a non-record
+  flake.testsError.types-identity.test-idOf-refuses-a-record-with-no-mint = {
+    expr = t.idOf { name = "foreign"; };
+    expectedError = {
+      type = "ThrownError";
+      msg = "^identity: type 'foreign' carries no `__mint`: it is no type record of this vocabulary, so it has no identity to demand$";
+    };
+  };
+  flake.testsError.types-identity.test-idOf-refuses-a-non-record = {
+    expr = t.idOf 3;
+    expectedError = {
+      type = "ThrownError";
+      msg = "^identity: a int carries no `__mint`: it is no type record of this vocabulary, so it has no identity to demand$";
+    };
+  };
+
+  # `__sealed` is TOTAL on every producer of a minted type, so `idOf` reads it directly and refuses a
+  # minted record without one by name rather than reading it as `{ }` (den-hoag-6orb8 A1)
+  flake.testsError.types-identity.test-idOf-refuses-a-mint-without-sealed = {
+    expr = t.idOf {
+      name = "half";
+      __mint.minted = "type:dddd";
+    };
+    expectedError = {
+      type = "ThrownError";
+      msg = "^identity: type 'half' carries a mint and no `__sealed`: its producer states no sealed components, so its mark cannot be read as an identity$";
     };
   };
 
@@ -94,7 +123,7 @@ in
       let
         own = t.int // t.witnessedCheck (x: t.int.verify x == null);
       in
-      (t.listOf (own // { check = x: own.check x && x < 3; })).__id;
+      t.idOf (t.listOf (own // { check = x: own.check x && x < 3; }));
     expectedError = {
       type = "ThrownError";
       msg = "identity: type 'listOf<int>' has sealed component\\(s\\) 'members.0' \\(a caller-supplied lambda, a registered construction, or a type with no minted identity\\), which its mark is blind to: it is decided by `typeEq` and has no identity to demand";

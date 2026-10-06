@@ -37,7 +37,7 @@ let
 in
 {
   # refined : baseChecker -> (refinement | [refinement]) -> checker
-  # Takes the identity core (name/verify/check/__name/__nameWithin/__id/__mint).
+  # Takes the identity core (name/verify/check/__name/__nameWithin/__mint).
   #
   # ★★ A REFINED TYPE'S DISTINGUISHING CONTENT IS `base ⊕ predicate`, AND THE NAME CARRIES ONLY THE
   # BASE. `refined<int>` says nothing about which predicates a value must satisfy, so two different
@@ -52,7 +52,7 @@ in
   # checks are carried in `__sealed`, a lambda in its own slot (so a stock refinement such as
   # `positive` shared by two types decides `true`) and a registered construction by its declared
   # subject (so two constructions of one term decide `true`). `typeEq` decides over the mark and
-  # those subjects, and demanding `__id` refuses by name.
+  # those subjects, and demanding its identity (`idOf`) refuses by name.
   refined =
     {
       mkCompositeSealed,
