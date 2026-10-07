@@ -12,8 +12,11 @@
 #
 #   nix-unit --flake ./ci#tests        # the suites
 #   nix-unit --flake ./ci#testsError   # these cells
-{ genTypes, ... }:
+{ genTypes, prelude, ... }:
 let
+  # gen-prelude's refusal text, composed with this library's own literal door, field and required set
+  # (den-hoag-7jltk): every assertion kept, none of gen-prelude's wording copied.
+  inherit (prelude) refusals;
   t = genTypes;
   # a merge strategy's shape: a name and a domain, no `verify` (as in ./tests/types-poly.nix)
   strategy = {
@@ -148,7 +151,12 @@ in
     };
     expectedError = {
       type = "ThrownError";
-      msg = "gen-types.mkValidator: required field 'message' is missing";
+      msg =
+        "^"
+        + prelude.escapeRegex (
+          refusals.missingField "gen-types.mkValidator" [ "name" "pred" "message" ] "message"
+        )
+        + "$";
     };
   };
 
