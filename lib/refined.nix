@@ -100,7 +100,9 @@ in
               [
                 {
                   inherit path;
-                  value = r;
+                  # a bare function refinement has no identity: a closure per construction, as
+                  # `mkIdentity` gives a function member
+                  value = if builtins.isFunction r then { fn = _: r; } else r;
                 }
               ]
             else if !(r ? check) then

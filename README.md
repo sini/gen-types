@@ -461,6 +461,37 @@ one is not detected: its `check` is this library's derived assertion `v: v2: …
 predicate, and nixpkgs `addCheck` cannot build one (it aborts at `merge`). Only a hand `//` over a
 derived field reaches it.
 
+## Evaluator divergences (stated)
+
+`==` compares a function by its value SLOT on upstream Nix and Determinate and by its OBJECT on
+Lix (the Nix manual, *Value identity optimization*). So where one function reaches the two operands
+of an identity decision through two slots (a selection written at each site, a `mapAttrs` copy, an
+argument thunk), upstream answers unequal and Lix answers equal. Where a construction can give the
+three one verdict without moving a verdict they already share, it does:
+
+- **A member that is a function** (`mkIdentity`, `lib/checkers.nix`), such as the unapplied `enum`
+  in `checkedListOf (enum [ "a" "b" ])`, is no type record and gets no identity. Its sealed subject is
+  a closure allocated per construction, so two constructions over it are refused on all three
+  evaluators and one construction is `true` against itself on all three. A bare function refinement
+  of `refined` (`lib/refined.nix`) is sealed the same way.
+
+The sites below cannot close that way. Lix gives one verdict to operands holding the same function
+objects, so a construction that moved a split verdict on Lix would move the verdict of its partner
+with it, and upstream has no observer of closure identity, so nothing can raise the split verdict to
+`true` there. Each site answers as the running evaluator's own `==` does, and
+`ci/tests-error.nix` `types-evaluator-divergences` pins each split cell to that evaluator's `==` on a
+literal two-slot shape, beside its partner at `true` on all three:
+
+| site (binding)                                                                                                                                                       | the shape that splits: Nix / Determinate / Lix                                                                      | the partner a closure would move (`true` ×3)                                                                       | what would close it                                               |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------- |
+| `lib/default.nix` `conservativeEq`, the compared arm `comparisonSubject a == comparisonSubject b`                                                                    | a nixpkgs type and a `mapAttrs` copy of it (`listOf int`, `enum [ "a" "b" ]`): `false` / `false` / `true`           | a foreign type against itself, `typeEq lib.types.str lib.types.str`                                                | foreign types migrating to gen-native ones, which mint            |
+| `lib/checkers.nix` `stampAgrees`, through `stampOk`                                                                                                                  | `int // { verify = int.verify; }` (and `check`) against `int`: refused / refused / `true`                           | `typeEq int int`                                                                                                   | ADR-0034's migration of `verify` and `check` to first-order terms |
+| `lib/checkers.nix` `sealedArg`, a constructor's caller predicate sealed in the slot it was passed in, through `typedef`, `typedef'` and `struct`'s `verify` override | one predicate passed by selection to two constructions (`typedef "even" ev.even` twice): refused / refused / `true` | one bound predicate in two constructions, `typedef "even" even` twice (`types-identity-sealed`, `sharedPredicate`) | ADR-0034's migration of the caller lambda to a first-order term   |
+| `lib/refined.nix`, a refinement record's `check` slice                                                                                                               | one `check` passed by selection to two refinements: refused / refused / `true`                                      | one bound `check` in two refinements                                                                               | the same migration of the caller's `check`                        |
+
+gen-schema states its own `refined` over a shared check, and gen-merge its `submodule` over a
+function-valued option type, in their READMEs.
+
 ## Handoff to `gen-merge`
 
 The checker record *is* the contract. A merge engine consumes a checker as a leaf's
@@ -486,7 +517,7 @@ $ cd ci && nix-unit --flake .#testsError        # unguarded
 and `nix flake check ./ci` are unguarded: they read a git-filtered copy of the tree, so an untracked
 cell is silently absent and the run stays green.
 
-207 nix-unit cells on `tests` and 9 on `testsError` across primitives, polymorphic combinators,
+241 nix-unit cells on `tests` and 38 on `testsError` across primitives, polymorphic combinators,
 structs, refined, validators, strict, identity, the `check` contract, the check-witness protocol,
 refusal rendering, and the purity invariant — every
 checker with success (`null`) and failure (exact error string) cases, plus nested and
