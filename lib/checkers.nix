@@ -866,7 +866,7 @@ let
     # ── polymorphic combinators ──
 
     # option<t>: null, or a t.
-    option =
+    checkedOption =
       t:
       let
         render = renderNode "option" "option<" "" ">" [ t ];
@@ -878,7 +878,7 @@ let
       );
 
     # listOf<t>: a list whose every element is a t.
-    listOf =
+    checkedListOf =
       t:
       let
         render = renderNode "listOf" "listOf<" "" ">" [ t ];
@@ -890,7 +890,7 @@ let
       );
 
     # attrsOf<t>: an attrset whose every value is a t.
-    attrsOf =
+    checkedAttrsOf =
       t:
       let
         render = renderNode "attrsOf" "attrsOf<" "" ">" [ t ];
