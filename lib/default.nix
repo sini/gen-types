@@ -150,6 +150,22 @@ in
 # validators) and the identity helpers ride alongside it.
 checkers
 // {
+  # ── the checked composites (grammar R10 rule 3) ──
+  # A checker is a predicate over one value; gen-merge's `listOf`/`attrsOf`/`option` are option
+  # types that fold definitions across modules. Two values of one sort with different meanings take
+  # two names, and gen-merge keeps the nixpkgs-parity ones (den-hoag-7gp66 O4).
+  checkedListOf = checkers.listOf;
+  checkedAttrsOf = checkers.attrsOf;
+  checkedOption = checkers.option;
+
+  # ── THE RETIRED NAMES ──
+  # Tombstones rather than silent aliases, as gen-schema's `ref`: each is refused by name and the
+  # refusal names its replacement. Published values, not lambdas, so reaching a name refuses as well
+  # as applying it; no message interpolates anything.
+  listOf = throw "gen-types: `listOf` is renamed `checkedListOf`. A checker is a predicate over one value and gen-merge's `listOf` folds definitions across modules, so the two take two names (grammar R10 rule 3); the arguments and the behaviour are unchanged.";
+  attrsOf = throw "gen-types: `attrsOf` is renamed `checkedAttrsOf`. A checker is a predicate over one value and gen-merge's `attrsOf` folds definitions across modules, so the two take two names (grammar R10 rule 3); the arguments and the behaviour are unchanged.";
+  option = throw "gen-types: `option` is renamed `checkedOption`. A checker is a predicate over one value and gen-merge's `option` is an option type, so the two take two names (grammar R10 rule 3); the arguments and the behaviour are unchanged.";
+
   # refinement contracts
   refined = refinedLib.refined {
     inherit

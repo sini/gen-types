@@ -10,9 +10,6 @@ let
     str
     list
     union
-    listOf
-    attrsOf
-    option
     tuple
     intersection
     optionalAttr
@@ -20,6 +17,9 @@ let
     refined
     typeEq
     ;
+  listOf = genTypes.checkedListOf;
+  attrsOf = genTypes.checkedAttrsOf;
+  option = genTypes.checkedOption;
   tag = v: if v.__mint ? minted then "minted" else "unmintable:${v.__mint.unmintable.ctor}";
   r = union [
     int

@@ -107,10 +107,12 @@ in
   # still decide `false`; twins decide `true`.
   flake.tests.types-identity-sealed.test-sealed-subjects-propagate-through-composites = {
     expr = {
-      markShared = (t.listOf (td r1)).__mint.minted == (t.listOf (td r9)).__mint.minted;
-      different = t.typeEq (t.listOf (td r1)) (t.listOf (td r9));
-      twins = t.typeEq (t.listOf (td r1)) (t.listOf (td r1'));
-      nested = t.typeEq (t.attrsOf (t.listOf (td r1))) (t.attrsOf (t.listOf (td r9)));
+      markShared = (t.checkedListOf (td r1)).__mint.minted == (t.checkedListOf (td r9)).__mint.minted;
+      different = t.typeEq (t.checkedListOf (td r1)) (t.checkedListOf (td r9));
+      twins = t.typeEq (t.checkedListOf (td r1)) (t.checkedListOf (td r1'));
+      nested = t.typeEq (t.checkedAttrsOf (t.checkedListOf (td r1))) (
+        t.checkedAttrsOf (t.checkedListOf (td r9))
+      );
     };
     expected = {
       markShared = true;
@@ -163,8 +165,8 @@ in
     expr = {
       id = refused (t.idOf (td r1));
       payload = refused (t.payloadOf (td r1));
-      controlId = builtins.isString (t.idOf (t.listOf t.int));
-      controlPayload = (t.payloadOf (t.listOf t.int)).ctor;
+      controlId = builtins.isString (t.idOf (t.checkedListOf t.int));
+      controlPayload = (t.payloadOf (t.checkedListOf t.int)).ctor;
     };
     expected = {
       id = true;

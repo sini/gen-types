@@ -8,15 +8,15 @@ let
     int
     list
     union
-    listOf
-    attrsOf
-    option
     tuple
     intersection
     struct
     enum
     refined
     ;
+  listOf = t.checkedListOf;
+  attrsOf = t.checkedAttrsOf;
+  option = t.checkedOption;
   N = k: builtins.concatStringsSep "" (builtins.genList (_: "n") k);
   r = union [
     int

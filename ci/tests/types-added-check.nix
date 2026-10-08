@@ -66,6 +66,9 @@ in
       "attrs"
       "attrsOf"
       "bool"
+      "checkedAttrsOf"
+      "checkedListOf"
+      "checkedOption"
       "comparisonSubject"
       "conservativeEq"
       "defaultOnError"
@@ -177,16 +180,16 @@ in
       structRefuses5 = v (t.struct "s" { a = rewritten; }) { a = 5; };
       structServes2 = v (t.struct "s" { a = rewritten; }) { a = 2; };
       unionRefuses5 = v (t.union [ rewritten ]) 5;
-      listOfEq = t.typeEq (t.listOf own) (t.listOf rewritten);
-      listOfSelf = t.typeEq (t.listOf own) (t.listOf own);
+      listOfEq = t.typeEq (t.checkedListOf own) (t.checkedListOf rewritten);
+      listOfSelf = t.typeEq (t.checkedListOf own) (t.checkedListOf own);
       # `own` and `rewritten` are `//` copies of `int`, so `typeEq` refuses them by name (the
       # completion stamp); `listOf` over them completes a record of its own and decides
       leafEq = !(builtins.tryEval (t.typeEq own rewritten)).success;
       leafSelf = !(builtins.tryEval (t.typeEq rewritten rewritten)).success;
-      mintTag = builtins.attrNames (t.listOf rewritten).__mint;
-      mintTagOwn = builtins.attrNames (t.listOf own).__mint;
+      mintTag = builtins.attrNames (t.checkedListOf rewritten).__mint;
+      mintTagOwn = builtins.attrNames (t.checkedListOf own).__mint;
       # the rewritten member is a sealed component, whatever its base's mint says
-      sealedRewritten = builtins.attrNames (t.listOf rewritten).__sealed;
+      sealedRewritten = builtins.attrNames (t.checkedListOf rewritten).__sealed;
       payloadRefused = !(builtins.tryEval (t.payloadOf rewritten)).success;
       payloadOwn = (t.payloadOf own).ctor;
     };

@@ -14,10 +14,10 @@ let
   evaluates = e: (builtins.tryEval (builtins.deepSeq e e)).success;
   # every member-reading combinator over `m`, with a value the stand-in's domain would admit
   over = m: {
-    option = (t.option m).verify 1;
-    listOf = (t.listOf m).verify [ 1 ];
-    listOfEmpty = (t.listOf m).verify [ ];
-    attrsOf = (t.attrsOf m).verify { x = 1; };
+    option = (t.checkedOption m).verify 1;
+    listOf = (t.checkedListOf m).verify [ 1 ];
+    listOfEmpty = (t.checkedListOf m).verify [ ];
+    attrsOf = (t.checkedAttrsOf m).verify { x = 1; };
     union =
       (t.union [
         m
@@ -46,21 +46,21 @@ in
 {
   # ── option ──
   flake.tests.types-poly.test-option-null = {
-    expr = (t.option t.int).verify null;
+    expr = (t.checkedOption t.int).verify null;
     expected = null;
   };
   flake.tests.types-poly.test-option-value-ok = {
-    expr = (t.option t.int).verify 3;
+    expr = (t.checkedOption t.int).verify 3;
     expected = null;
   };
   flake.tests.types-poly.test-option-value-fail = {
-    expr = (t.option t.int).verify "x";
+    expr = (t.checkedOption t.int).verify "x";
     expected = "in option<int>: expected type 'int' but value \"x\" is of type 'string'";
   };
 
   # ── listOf ──
   flake.tests.types-poly.test-listOf-ok = {
-    expr = (t.listOf t.int).verify [
+    expr = (t.checkedListOf t.int).verify [
       1
       2
       3
@@ -68,38 +68,38 @@ in
     expected = null;
   };
   flake.tests.types-poly.test-listOf-empty-ok = {
-    expr = (t.listOf t.int).verify [ ];
+    expr = (t.checkedListOf t.int).verify [ ];
     expected = null;
   };
   flake.tests.types-poly.test-listOf-element-fail = {
-    expr = (t.listOf t.int).verify [
+    expr = (t.checkedListOf t.int).verify [
       1
       "x"
     ];
     expected = "in listOf<int> element: expected type 'int' but value \"x\" is of type 'string'";
   };
   flake.tests.types-poly.test-listOf-not-a-list = {
-    expr = (t.listOf t.int).verify 5;
+    expr = (t.checkedListOf t.int).verify 5;
     expected = "expected type 'listOf<int>' but value 5 is of type 'int'";
   };
 
   # ── attrsOf ──
   flake.tests.types-poly.test-attrsOf-ok = {
-    expr = (t.attrsOf t.int).verify {
+    expr = (t.checkedAttrsOf t.int).verify {
       a = 1;
       b = 2;
     };
     expected = null;
   };
   flake.tests.types-poly.test-attrsOf-value-fail = {
-    expr = (t.attrsOf t.int).verify {
+    expr = (t.checkedAttrsOf t.int).verify {
       a = 1;
       b = "x";
     };
     expected = "in attrsOf<int> value: expected type 'int' but value \"x\" is of type 'string'";
   };
   flake.tests.types-poly.test-attrsOf-not-attrs = {
-    expr = (t.attrsOf t.int).verify [ 1 ];
+    expr = (t.checkedAttrsOf t.int).verify [ 1 ];
     expected = "expected type 'attrsOf<int>' but value [ … (1 element) ] is of type 'list'";
   };
 
@@ -232,7 +232,7 @@ in
 
   # ── nested composition ──
   flake.tests.types-poly.test-nested-listOf-option = {
-    expr = (t.listOf (t.option t.int)).verify [
+    expr = (t.checkedListOf (t.checkedOption t.int)).verify [
       1
       null
       2
@@ -240,7 +240,7 @@ in
     expected = null;
   };
   flake.tests.types-poly.test-nested-attrsOf-listOf-fail = {
-    expr = (t.attrsOf (t.listOf t.int)).verify {
+    expr = (t.checkedAttrsOf (t.checkedListOf t.int)).verify {
       a = [
         1
         "x"
@@ -267,7 +267,7 @@ in
     let
       r = t.union [
         t.int
-        (t.listOf r)
+        (t.checkedListOf r)
       ];
     in
     {

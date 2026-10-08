@@ -45,7 +45,7 @@ in
       let
         r = t.union [
           t.int
-          (t.listOf r)
+          (t.checkedListOf r)
         ];
       in
       t.idOf r;
@@ -136,7 +136,7 @@ in
       let
         own = t.int // t.witnessedCheck (x: t.int.verify x == null);
       in
-      t.idOf (t.listOf (own // { check = x: own.check x && x < 3; }));
+      t.idOf (t.checkedListOf (own // { check = x: own.check x && x < 3; }));
     expectedError = {
       type = "ThrownError";
       msg = "gen-types: idOf: type 'listOf<int>' has sealed component\\(s\\) 'members.0' \\(a caller-supplied lambda, a registered construction, or a type with no minted identity\\), which its mark is blind to: it is decided by `typeEq` and has no identity to demand";

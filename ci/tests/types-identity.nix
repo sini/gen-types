@@ -65,11 +65,11 @@ in
     expected = "int";
   };
   flake.tests.types-identity.test-basename-strips-poly = {
-    expr = (t.listOf t.int).__name;
+    expr = (t.checkedListOf t.int).__name;
     expected = "listOf";
   };
   flake.tests.types-identity.test-fullname-keeps-poly = {
-    expr = (t.listOf t.int).name;
+    expr = (t.checkedListOf t.int).name;
     expected = "listOf<int>";
   };
   # ★ THE FORMAT MOVED WITH THE AUTHORITY, and the cell asserts the SHAPE rather than a length now.
@@ -90,7 +90,7 @@ in
   };
   flake.tests.types-identity.test-typeEq-same-structural-name = {
     # two independently-constructed listOf<int> are intensionally equal
-    expr = t.typeEq (t.listOf t.int) (t.listOf t.int);
+    expr = t.typeEq (t.checkedListOf t.int) (t.checkedListOf t.int);
     expected = true;
   };
   flake.tests.types-identity.test-typeEq-different-names = {
@@ -102,7 +102,7 @@ in
     expected = true;
   };
   flake.tests.types-identity.test-typeEq-nested-distinct = {
-    expr = t.typeEq (t.listOf t.int) (t.listOf t.str);
+    expr = t.typeEq (t.checkedListOf t.int) (t.checkedListOf t.str);
     expected = false;
   };
   flake.tests.types-identity.test-conservativeEq-alias = {
@@ -145,8 +145,8 @@ in
       twinEnum = t.typeEq (t.enum "colour" [ "red" ]) (t.enum "colour" [ "red" ]);
       twinStruct = t.typeEq (t.struct "cfg" { a = t.int; }) (t.struct "cfg" { a = t.int; });
       # CONTROL, unchanged by this landing in both directions.
-      controlDistinct = t.typeEq (t.listOf t.int) (t.listOf t.str);
-      controlSame = t.typeEq (t.listOf t.int) (t.listOf t.int);
+      controlDistinct = t.typeEq (t.checkedListOf t.int) (t.checkedListOf t.str);
+      controlSame = t.typeEq (t.checkedListOf t.int) (t.checkedListOf t.int);
     };
     expected = {
       refined = false;
@@ -170,18 +170,20 @@ in
   # IDENTITY, so a composite is structural exactly as deep as its members are.
   flake.tests.types-identity.test-collision-does-not-travel-through-combinators = {
     expr = {
-      listOfStructs = t.typeEq (t.listOf (t.struct "cfg" { a = t.int; })) (
-        t.listOf (t.struct "cfg" { a = t.str; })
+      listOfStructs = t.typeEq (t.checkedListOf (t.struct "cfg" { a = t.int; })) (
+        t.checkedListOf (t.struct "cfg" { a = t.str; })
       );
-      attrsOfEnums = t.typeEq (t.attrsOf (t.enum "e" [ "a" ])) (t.attrsOf (t.enum "e" [ "b" ]));
+      attrsOfEnums = t.typeEq (t.checkedAttrsOf (t.enum "e" [ "a" ])) (
+        t.checkedAttrsOf (t.enum "e" [ "b" ])
+      );
       tupleOfStructs = t.typeEq (t.tuple [ (t.struct "cfg" { a = t.int; }) ]) (
         t.tuple [ (t.struct "cfg" { a = t.str; }) ]
       );
       # A composite over a member with a SEALED component stays MINTED (ADR-0034's
       # per-component clause): it mints over the member's mark and carries the member's
       # sealed subject under the member's path, so the mark never decides alone.
-      composingASealedMember = regimeOf (t.listOf (t.refined t.int r.positive));
-      sealedTravels = builtins.attrNames (t.listOf (t.refined t.int r.positive)).__sealed;
+      composingASealedMember = regimeOf (t.checkedListOf (t.refined t.int r.positive));
+      sealedTravels = builtins.attrNames (t.checkedListOf (t.refined t.int r.positive)).__sealed;
 
       # ★★ AND REFLEXIVITY OVER CONSTRUCTION HOLDS WHERE THE SEALED COMPONENT IS ONE BINDING.
       # Two `refined` constructions over the one stock refinement carry its `check` in its own
@@ -189,14 +191,14 @@ in
       # lambdas are still refused (`types-identity-sealed.nix`), and `controlEqualMembers` below
       # is the minted control.
       refinedSelf = t.typeEq (t.refined t.int r.positive) (t.refined t.int r.positive);
-      listOfRefinedSelf = t.typeEq (t.listOf (t.refined t.int r.positive)) (
-        t.listOf (t.refined t.int r.positive)
+      listOfRefinedSelf = t.typeEq (t.checkedListOf (t.refined t.int r.positive)) (
+        t.checkedListOf (t.refined t.int r.positive)
       );
 
       # CONTROL: composites over EQUAL members still compare equal, so this is a finer
       # relation and not a broken one.
-      controlEqualMembers = t.typeEq (t.listOf (t.struct "cfg" { a = t.int; })) (
-        t.listOf (t.struct "cfg" { a = t.int; })
+      controlEqualMembers = t.typeEq (t.checkedListOf (t.struct "cfg" { a = t.int; })) (
+        t.checkedListOf (t.struct "cfg" { a = t.int; })
       );
     };
     expected = {
@@ -230,7 +232,7 @@ in
   flake.tests.types-identity.test-identity-regime-is-decided-by-constructor = {
     expr = {
       prim = regimeOf t.int;
-      listOf = regimeOf (t.listOf t.int);
+      listOf = regimeOf (t.checkedListOf t.int);
       enum = regimeOf (t.enum "colour" [ "red" ]);
       strict = regimeOf (t.strict [ "a" ]);
       struct = regimeOf (t.struct "cfg" { a = t.int; });
@@ -305,7 +307,7 @@ in
   # that: with the `ctor` label removed from the preimage this cell FAILS while the shipped
   # tree passes — measured in one run.
   flake.tests.types-identity.test-constructor-tag-separates-equal-arguments = {
-    expr = t.typeEq (t.option t.int) (t.listOf t.int);
+    expr = t.typeEq (t.checkedOption t.int) (t.checkedListOf t.int);
     expected = false;
   };
 
@@ -436,7 +438,7 @@ in
 
   # gen-native CONTROL, same run: the native path was never broken and stays unchanged.
   flake.tests.types-identity.test-foreign-listOf-gen-native-control = {
-    expr = t.typeEq (t.listOf t.str) (t.listOf t.int);
+    expr = t.typeEq (t.checkedListOf t.str) (t.checkedListOf t.int);
     expected = false;
   };
 
@@ -465,9 +467,9 @@ in
     let
       shapes = {
         int = t.int;
-        listOfInt = t.listOf t.int;
+        listOfInt = t.checkedListOf t.int;
         typedef = t.typedef "port" (v: v > 0);
-        listOfTypedef = t.listOf (t.typedef "port" (v: v > 0));
+        listOfTypedef = t.checkedListOf (t.typedef "port" (v: v > 0));
         refined = t.refined t.int r.positive;
         structOverride = (t.struct "s" { }).override { verify = _: null; };
         enum = t.enum "e" [ "a" ];
@@ -512,7 +514,7 @@ in
   flake.tests.types-identity.test-comparison-subject-keeps-every-field-but-okAt = {
     expr =
       let
-        s = builtins.elemAt (t.comparisonSubject (t.listOf t.int // { __id = "kept"; })) 1;
+        s = builtins.elemAt (t.comparisonSubject (t.checkedListOf t.int // { __id = "kept"; })) 1;
       in
       {
         id = s.__id or null;

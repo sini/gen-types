@@ -96,15 +96,19 @@ t.int.check "x" "x"         # => throws the error above
 ### Polymorphic combinators
 
 ```nix
-t.option t.int                       # null, or an int
-t.listOf t.str                       # list of strings
-t.attrsOf t.int                      # attrset of ints
+t.checkedOption t.int                # null, or an int
+t.checkedListOf t.str                # list of strings
+t.checkedAttrsOf t.int               # attrset of ints
 t.union [ t.int t.str ]              # int or string
 t.intersection [ t.int t.number ]    # int and number
 t.enum "color" [ "red" "green" ]     # membership
 t.tuple [ t.int t.str ]              # positional [int, string]
 t.optionalAttr t.int                 # an int; struct treats the key as omittable
 ```
+
+The checked composites were `listOf`, `attrsOf` and `option`. Those names are gen-merge's option
+types, which fold definitions across modules, so here they are tombstones that refuse by name and
+name the successor.
 
 A combinator's members must be checkers. A member with no `verify` (a gen-merge merge
 strategy such as `submodule`, which carries `admits` instead) is refused by name and
@@ -118,16 +122,16 @@ order:
 
 The check reaches the combinator that directly holds the member. It runs at use rather
 than when the combinator is applied, because a self-referential type
-(`let r = t.union [ t.int (t.listOf r) ]; in r`) would otherwise diverge. So a
+(`let r = t.union [ t.int (t.checkedListOf r) ]; in r`) would otherwise diverge. So a
 non-checker nested one level further in is found only when the outer combinator reaches
 it, and these ill-formed types still answer `null`:
-`t.listOf (t.union [ t.str m ])` given `[ ]`, `t.option (t.union [ t.str m ])` given
+`t.checkedListOf (t.union [ t.str m ])` given `[ ]`, `t.checkedOption (t.union [ t.str m ])` given
 `null`, and a struct key declared `t.optionalAttr m` when the key is absent.
 
 Errors thread context through nesting:
 
 ```nix
-(t.attrsOf (t.listOf t.int)).verify { a = [ 1 "x" ]; }
+(t.checkedAttrsOf (t.checkedListOf t.int)).verify { a = [ 1 "x" ]; }
 # => "in attrsOf<listOf<int>> value: in listOf<int> element:
 #     expected type 'int' but value \"x\" is of type 'string'"
 ```
@@ -149,7 +153,7 @@ refusal and `strict` list unknown key names in full.
 
 The type's name in the same refusal is bounded by the same 256 bytes. A combinator renders
 its name within the budget and hands each member a strictly smaller one, so the name of a
-self-referential type is finite and its refusal returns. `let r = t.union [ t.int (t.listOf r) ]; in r.verify "a"` names the type in 250 bytes: `union<int,listOf<` 13 times, then `…` and the
+self-referential type is finite and its refusal returns. `let r = t.union [ t.int (t.checkedListOf r) ]; in r.verify "a"` names the type in 250 bytes: `union<int,listOf<` 13 times, then `…` and the
 closing brackets. Past the budget, the remaining members collapse into `…`. A name of
 at most 256 − 3d bytes (d its nesting depth, so 253 when flat) is unchanged. This covers every
 name a gen-types combinator builds; a hand-built member whose own `name` interpolates the cycle
@@ -270,7 +274,7 @@ lib's `version` does not move under `lib.extend`. The price is that separately b
 twins, and one leaf across two lib instances, compare unequal. A type that needs structural
 identity is written with this library's constructors, which mint natively. gen-merge's
 composites mint too, through `mkIdentity`, under the constructor names `gen-merge.<name>`, so
-gen-merge's `listOf int` and this library's `listOf int` are two types.
+gen-merge's `listOf int` and this library's `checkedListOf int` are two types.
 
 One limit applies: **a hand-grafted comparison across two nixpkgs lib instances can abort.**
 When two records share every closure field and differ only in grafted cross-instance data
@@ -351,7 +355,7 @@ over the cached `__mint` and `__sealed` and never re-mints, so a repeated demand
 consumer that merely decides dispatches instead of demanding.
 
 ```nix
-t.typeEq (t.listOf t.int) (t.listOf t.int)          # => true
+t.typeEq (t.checkedListOf t.int) (t.checkedListOf t.int)          # => true
 t.typeEq t.int t.str                                # => false
 t.typeEq (t.strict [ "a" ]) (t.strict [ "b" ])      # => false  (both named "strict")
 t.typeEq (t.refined t.int r.positive)
@@ -375,7 +379,7 @@ when its identity is demanded. A type between 129 and about 900 deep therefore c
 mints, and gen-merge refuses an identical redeclaration of one by name rather than merging it.
 
 ```nix
-let r = t.union [ t.int (t.listOf r) ]; in
+let r = t.union [ t.int (t.checkedListOf r) ]; in
 r.__mint                                            # => { unmintable = { ctor = "union"; … }; }
 t.typeEq r r                                        # => true   (the same binding)
 t.idOf r                                            # => throws: … has no identity to demand: a type nests

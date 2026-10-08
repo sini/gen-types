@@ -30,7 +30,7 @@ in
     test-completed-records-pass = {
       expr = {
         prim = t.typeEq t.int t.int;
-        composite = t.typeEq (t.listOf t.int) (t.listOf t.int);
+        composite = t.typeEq (t.checkedListOf t.int) (t.checkedListOf t.int);
         structOverride = t.typeEq ((t.struct "s" { a = t.int; }).override { total = false; }) (
           (t.struct "s" { a = t.int; }).override { total = false; }
         );
@@ -42,7 +42,7 @@ in
         distinct = t.typeEq t.int t.str;
         stampOk = builtins.all t.stampOk [
           t.int
-          (t.listOf t.str)
+          (t.checkedListOf t.str)
           (t.refined t.int t.refinements.positive)
           (t.struct "s" { a = t.int; })
           { name = "foreign"; }

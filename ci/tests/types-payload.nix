@@ -10,7 +10,7 @@ let
     let
       r = t.union [
         t.str
-        (t.listOf r)
+        (t.checkedListOf r)
       ];
     in
     r;
@@ -22,7 +22,7 @@ in
       prim = t.payloadOf t.int;
       # a composite's arguments hold member IDENTITIES, never member checkers
       listOf =
-        t.payloadOf (t.listOf t.int) == {
+        t.payloadOf (t.checkedListOf t.int) == {
           ctor = "listOf";
           args = t.int.__mint.minted;
         };
