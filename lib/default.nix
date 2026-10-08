@@ -30,6 +30,7 @@ let
     mkIdentity
     completedType
     stampOk
+    marksItsBase
     identityGuard
     comparisonSubject
     verifiersOf
@@ -224,7 +225,7 @@ checkers
       throw "gen-types: idOf: ${
         if builtins.isAttrs t then "`${nameOf t}'" else "a ${builtins.typeOf t}"
       } carries no `__mint`: it is no type record of this vocabulary, so it has no identity to demand"
-    else if rewritesCheck t || !(stampOk t) then
+    else if marksItsBase t then
       throw "gen-types: idOf: `${nameOf t}' is a `//' copy or a wrapper that rewrote its check: its mark names its base, so it has no identity to demand"
     else if t.__mint ? minted then
       if !(t ? __sealed) then

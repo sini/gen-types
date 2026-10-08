@@ -305,8 +305,11 @@ composite is structural exactly as deep as its members are.
 
 **Identity is per component.** A type mints over its constructor and its argument
 value, in which each member enters as a **tag**: a minted member by its identity, and a **sealed**
-one — a member with no minted identity, or one whose `check` a wrapper rewrote (the check-witness
-protocol) — as gen-algebra's `sealedMarker`. A constructor's own caller-supplied arguments are sealed
+one — a member with no minted identity, one whose `check` a wrapper rewrote (the check-witness
+protocol), or a `//` copy departing from the record its completion returned at a field that
+completion's identity covers — as gen-algebra's `sealedMarker`. A completion names those fields in
+`__stampReads`; one that names none covers every field, and only the named fields are forced to
+decide it. A constructor's own caller-supplied arguments are sealed
 components too: a `typedef`'s predicate, a refinement's `check`, a struct's `verify`. So every
 constructor **mints**, and beside the mark the type carries `__sealed`, the map from each sealed
 component's path to what a comparison reads: a lambda in its own slot, a registered construction
@@ -314,14 +317,14 @@ component's path to what a comparison reads: a lambda in its own slot, a registe
 and a minted member's own `__sealed` under the member's path (**propagation**). The mark is blind to
 `__sealed`, so it is never a key alone:
 
-| construction                                                                 | `__mint`   | `__sealed`                      |
-| ---------------------------------------------------------------------------- | ---------- | ------------------------------- |
-| primitives, composites over minted members, `enum`, `strict`, `struct`       | **minted** | `{ }`: the mark is the identity |
-| `struct(…).override { verify = …; }`                                         | **minted** | `verify`                        |
-| `refined base refs`                                                          | **minted** | each `refinements.<i>`          |
-| `typedef` / `typedef'`                                                       | **minted** | `pred` / `verify`               |
-| a composite over a member with no minted identity, or a rewritten `check`    | **minted** | `members.<i>`                   |
-| a self-referential or over-deep type; arguments the encoder refuses (a path) | unmintable | —                               |
+| construction                                                                           | `__mint`   | `__sealed`                      |
+| -------------------------------------------------------------------------------------- | ---------- | ------------------------------- |
+| primitives, composites over minted members, `enum`, `strict`, `struct`                 | **minted** | `{ }`: the mark is the identity |
+| `struct(…).override { verify = …; }`                                                   | **minted** | `verify`                        |
+| `refined base refs`                                                                    | **minted** | each `refinements.<i>`          |
+| `typedef` / `typedef'`                                                                 | **minted** | `pred` / `verify`               |
+| a composite over a member with no minted identity, a rewritten `check`, or a `//` copy | **minted** | `members.<i>`                   |
+| a self-referential or over-deep type; arguments the encoder refuses (a path)           | unmintable | —                               |
 
 **`typeEq` decides over both.** Distinct marks decide `false`; equal marks with `==` sealed maps
 decide `true`; equal marks with unequal sealed maps decide `false` where every differing leaf is an
@@ -437,8 +440,8 @@ t.rewritesCheck t.int                                # => false  (no witness)
 
 Where the test holds, this library's readers treat the record as carrying a check its identity does
 not state. A combinator (`listOf`, `union`, `struct`, …) carries that `check` beside the member's
-`verify`, `idOf` refuses the member by name, so a composite over it takes the unmintable regime,
-`identityOf` answers `unmintable`, and `payloadOf` refuses it.
+`verify`, `idOf` refuses the member by name, so a composite over it stays minted with the member in
+`__sealed`, and `idOf` and `payloadOf` refuse the composite by name.
 
 **A producer that publishes the pair itself.** Every call to `witnessedCheck` returns a fresh
 two-field set the caller must then read or merge, which costs a producer that builds one type per

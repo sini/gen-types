@@ -180,7 +180,9 @@ in
       structRefuses5 = v (t.struct "s" { a = rewritten; }) { a = 5; };
       structServes2 = v (t.struct "s" { a = rewritten; }) { a = 2; };
       unionRefuses5 = v (t.union [ rewritten ]) 5;
-      listOfEq = t.typeEq (t.checkedListOf own) (t.checkedListOf rewritten);
+      # `own` is a `//` copy, so it enters `listOf` sealed beside `rewritten` (den-hoag-6d5r3): one mark,
+      # two sealed subjects, refused by name
+      listOfEq = !(builtins.tryEval (t.typeEq (t.checkedListOf own) (t.checkedListOf rewritten))).success;
       listOfSelf = t.typeEq (t.checkedListOf own) (t.checkedListOf own);
       # `own` and `rewritten` are `//` copies of `int`, so `typeEq` refuses them by name (the
       # completion stamp); `listOf` over them completes a record of its own and decides
@@ -200,7 +202,7 @@ in
       structRefuses5 = "R";
       structServes2 = "V";
       unionRefuses5 = "R";
-      listOfEq = false;
+      listOfEq = true;
       listOfSelf = true;
       leafEq = true;
       leafSelf = true;

@@ -451,8 +451,17 @@ let
   # Returns the identity fields: `__mint`, `__payload`, `__sealed`, and `__okAt` on a composite, each
   # TOTAL under `deepSeq`. `name` words nothing here: `idOf` words a refusal from the record's own
   # `name`.
+  # A member enters by its digest only while its mark still names it: no wrapper rewrote its check,
+  # and it departs from the record its constructor completed at no cell its completion's identity
+  # covers (`stampHolds`). The stamp is asked only of a MINTED member: an unminted one is sealed
+  # already, and a cyclic type's members are unminted while they are being built.
   isSealedMember =
-    t: !(isAttrs t) || rewritesCheck t || !(t ? __mint && isAttrs t.__mint && t.__mint ? minted);
+    t:
+    !(isAttrs t)
+    || !(t ? __mint && isAttrs t.__mint && t.__mint ? minted)
+    || rewritesCheck t
+    || !(stampHolds t);
+  marksItsBase = t: rewritesCheck t || !(stampOk t);
   tagOf = t: if isSealedMember t then algebra.sealedMarker else t.__mint.minted;
   mkIdentity =
     ctor: members: mkArgs: sealed: name:
@@ -627,6 +636,28 @@ let
     a: b: cellAgrees a b a b;
   stampOk =
     t: !(isAttrs t && t ? __typeSelf) || (isFunction t.__typeSelf && stampAgrees (t.__typeSelf null) t);
+  # ★ THE STAMP OVER WHAT A COMPLETION'S IDENTITY COVERS (den-hoag-6d5r3). `stampOk` compares every
+  # cell, and Nix `==` forces each cell of a record compared with itself, so it evaluates a submodule's
+  # module set (`description`, `nestedTypes`) and any caller cell. A completion that states
+  # `__stampReads` names the fields its mark is a claim about, and the record holds the stamp when it
+  # agrees with that completion, the record `__typeSelf` returns and a `//` copy cannot change, at
+  # each of them, present on either side. Only those cells are forced. A completion stating none
+  # covers every field of both.
+  stampHolds =
+    t:
+    !(isAttrs t && t ? __typeSelf)
+    || (
+      isFunction t.__typeSelf
+      && (
+        let
+          c = t.__typeSelf null;
+          slice = n: builtins.intersectAttrs { ${n} = null; };
+        in
+        builtins.all (n: !(c ? ${n} || t ? ${n}) || stampAgrees (slice n c) (slice n t)) (
+          c.__stampReads or (attrNames c ++ attrNames t)
+        )
+      )
+    );
   mkComposite =
     ctor: members: mkArgs:
     mkCompositeSealed ctor members mkArgs [ ];
@@ -1106,6 +1137,8 @@ in
     mkIdentity
     completedType
     stampOk
+    stampHolds
+    marksItsBase
     identityGuard
     comparisonSubject
     verifiersOf
