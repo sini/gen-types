@@ -12,7 +12,13 @@
 #
 #   nix-unit --flake ./ci#tests        # the suites
 #   nix-unit --flake ./ci#testsError   # these cells
-{ genTypes, prelude, ... }:
+{
+  genTypes,
+  prelude,
+  algebra,
+  lib,
+  ...
+}:
 let
   # gen-prelude's refusal text, composed with this library's own literal door, field and required set
   # (den-hoag-7jltk): every assertion kept, none of gen-prelude's wording copied.
@@ -23,6 +29,57 @@ let
     name = "strategy";
     admits = _: true;
   };
+
+  # ── the evaluator divergences (README "Evaluator divergences (stated)") ──
+  # `==` compares a function by its value SLOT on upstream Nix and Determinate and by its OBJECT on
+  # Lix, so one function reached through two slots splits them. These cells run here, on the plane
+  # each evaluator runs itself. A verdict reads `"REFUSED"` for a caught refusal.
+  verdict =
+    v:
+    let
+      o = builtins.tryEval (builtins.deepSeq v v);
+    in
+    if o.success then o.value else "REFUSED";
+  teq = a: b: verdict (t.typeEq a b);
+  # the RUNNING evaluator's own `==` on a literal shape that holds one function in two slots, so a
+  # stated split is held to that evaluator's fact and to no binding of this library
+  ownEq =
+    x: y:
+    let
+      o = builtins.tryEval (x == y);
+    in
+    o.success && o.value;
+  twoSlots = ownEq { c = sl.f; } { c = sl.f; };
+  asRefusal = b: if b then true else "REFUSED";
+  sl = {
+    f = x: x;
+    # the unapplied `enum` (`name0: elems:`), the member of the shape that found the split
+    enumFn = t.enum [
+      "a"
+      "b"
+    ];
+    pos = x: x > 0;
+    even = x: builtins.bitAnd x 1 == 0;
+    verify = x: if x > 0 then null else "negative";
+  };
+  pos = sl.pos;
+  even = sl.even;
+  verifyPos = sl.verify;
+  rebuild = builtins.mapAttrs (_: v: v);
+  foreignList = lib.types.listOf lib.types.int;
+  foreignEnum = lib.types.enum [
+    "a"
+    "b"
+  ];
+  refinedCheck =
+    f:
+    t.refined t.int [
+      {
+        check = f;
+        message = "positive";
+      }
+    ];
+  structVerify = f: (t.struct "s" { a = t.int; }).override { verify = f; };
 in
 {
   # the refusal names the combinator and the member
@@ -189,6 +246,135 @@ in
     expectedError = {
       type = "ThrownError";
       msg = "fyx6m: the coercion's own error";
+    };
+  };
+
+  # ★ CLOSED BY CONSTRUCTION (`mkIdentity`'s member arm, `refined`'s bare refinement): a member that is
+  # a function has no identity, so two constructions over it are refused on all three evaluators,
+  # where Lix used to answer `true` through two slots of one function. One construction against
+  # itself stays `true` ×3. RED on Lix with either arm's closure reverted.
+  flake.testsError.types-evaluator-divergences = {
+    test-a-function-member-in-two-constructions-is-refused-on-every-evaluator = {
+      expr = teq (t.checkedListOf sl.enumFn) (t.checkedListOf sl.enumFn);
+      expected = "REFUSED";
+    };
+    test-a-function-member-in-one-construction-is-itself = {
+      expr =
+        let
+          x = t.checkedListOf sl.enumFn;
+        in
+        teq x x;
+      expected = true;
+    };
+    # gen-algebra `conservativeEq`'s own entry to `sealedCollisionEq`, over the same subjects
+    test-algebra-conservativeEq-refuses-a-function-member-in-two-constructions = {
+      expr = verdict (algebra.conservativeEq (t.checkedListOf sl.enumFn) (t.checkedListOf sl.enumFn));
+      expected = "REFUSED";
+    };
+    test-algebra-conservativeEq-holds-of-a-function-member-in-one-construction = {
+      expr =
+        let
+          x = t.checkedListOf sl.enumFn;
+        in
+        verdict (algebra.conservativeEq x x);
+      expected = true;
+    };
+    test-a-bare-function-refinement-in-two-constructions-is-refused-on-every-evaluator = {
+      expr = {
+        bound = teq (t.refined t.int [ pos ]) (t.refined t.int [ pos ]);
+        selected = teq (t.refined t.int [ sl.pos ]) (t.refined t.int [ sl.pos ]);
+      };
+      expected = {
+        bound = "REFUSED";
+        selected = "REFUSED";
+      };
+    };
+    test-a-bare-function-refinement-in-one-construction-is-itself = {
+      expr =
+        let
+          x = t.refined t.int [ pos ];
+        in
+        teq x x;
+      expected = true;
+    };
+
+    # ★ STATED DIVERGENCES. Each split cell holds the site's verdict to the running evaluator's own
+    # `==` over a literal two-slot shape (false on Nix and Determinate, `true` on Lix), so it reds on
+    # any evaluator whose site stops answering as its `==` does. Each partner is the verdict a closure
+    # at the site would move, `true` ×3.
+    # s3: the compared arm, `comparisonSubject a == comparisonSubject b`, over a foreign record
+    # rebuilt by a `mapAttrs` copy (each closure field a fresh slot)
+    test-a-rebuilt-foreign-listOf-answers-as-the-evaluator-s-own-identity = {
+      expr = teq foreignList (rebuild foreignList) == twoSlots;
+      expected = true;
+    };
+    test-a-rebuilt-foreign-enum-answers-as-the-evaluator-s-own-identity = {
+      expr = teq foreignEnum (rebuild foreignEnum) == twoSlots;
+      expected = true;
+    };
+    test-a-foreign-type-is-itself = {
+      expr = {
+        listOf = teq foreignList foreignList;
+        str = teq lib.types.str lib.types.str;
+      };
+      expected = {
+        listOf = true;
+        str = true;
+      };
+    };
+    # s4: `stampAgrees` through `stampOk`, over a `//` that restates a closure field by selection
+    test-a-restated-verify-answers-as-the-evaluator-s-own-identity = {
+      expr = teq t.int (t.int // { verify = t.int.verify; }) == asRefusal twoSlots;
+      expected = true;
+    };
+    test-a-restated-check-answers-as-the-evaluator-s-own-identity = {
+      expr = teq t.int (t.int // { check = t.int.check; }) == asRefusal twoSlots;
+      expected = true;
+    };
+    test-int-is-itself-and-a-slice-restated-is-int = {
+      expr = {
+        intInt = teq t.int t.int;
+        sliceRestated = teq t.int (t.int // builtins.intersectAttrs { verify = null; } t.int);
+      };
+      expected = {
+        intInt = true;
+        sliceRestated = true;
+      };
+    };
+    # `sealedArg`: a constructor's own caller predicate, sealed in the slot it was passed in, through
+    # each caller (`typedef`, `typedef'`, `struct`'s `verify`)
+    test-a-typedef-predicate-by-selection-answers-as-the-evaluator-s-own-identity = {
+      expr = teq (t.typedef "even" sl.even) (t.typedef "even" sl.even) == asRefusal twoSlots;
+      expected = true;
+    };
+    test-a-typedef-prime-verifier-by-selection-answers-as-the-evaluator-s-own-identity = {
+      expr = teq (t.typedef' "v" sl.verify) (t.typedef' "v" sl.verify) == asRefusal twoSlots;
+      expected = true;
+    };
+    test-a-struct-verify-by-selection-answers-as-the-evaluator-s-own-identity = {
+      expr = teq (structVerify sl.verify) (structVerify sl.verify) == asRefusal twoSlots;
+      expected = true;
+    };
+    test-a-bound-caller-predicate-is-one-type = {
+      expr = {
+        typedef = teq (t.typedef "even" even) (t.typedef "even" even);
+        typedefPrime = teq (t.typedef' "v" verifyPos) (t.typedef' "v" verifyPos);
+        structVerify = teq (structVerify verifyPos) (structVerify verifyPos);
+      };
+      expected = {
+        typedef = true;
+        typedefPrime = true;
+        structVerify = true;
+      };
+    };
+    # `refined`'s check slice: a refinement record's `check`, sealed in its slot
+    test-a-refinement-check-by-selection-answers-as-the-evaluator-s-own-identity = {
+      expr = teq (refinedCheck sl.pos) (refinedCheck sl.pos) == asRefusal twoSlots;
+      expected = true;
+    };
+    test-a-bound-refinement-check-is-one-type = {
+      expr = teq (refinedCheck pos) (refinedCheck pos);
+      expected = true;
     };
   };
 }

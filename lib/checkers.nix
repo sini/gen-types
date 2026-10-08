@@ -431,7 +431,9 @@ let
   #
   # Beside the mark the type carries `__sealed`, gen-algebra `componentsPreimage`'s map from each
   # sealed component's path to its comparison subject: a sealed member as this library's
-  # `comparisonSubject` of it (closures first), a lambda in its own slot, a registered construction
+  # `comparisonSubject` of it (closures first), a member that is a function as a closure allocated per
+  # construction (it has no identity, so two constructions over it are two subjects), a constructor's
+  # own caller lambda in its own slot, a registered construction
   # as `{ compared = <its declared subject>; }`, and a minted member that itself seals something as
   # its own `__sealed` (PROPAGATION). The mark is blind to all of it, so it is NEVER a key on its own:
   # `typeEq` decides over both (`sealedCollisionEq`), `idOf` refuses a demand while `__sealed` is
@@ -490,7 +492,16 @@ let
                 "members"
                 m.k
               ];
-              value = if isAttrs m.t then comparisonSubject m.t else m.t;
+              # a member that is a function is no type record and gets no identity: its subject is a
+              # closure allocated per construction, so two constructions over it are two subjects on
+              # every evaluator (gen-types README, "Evaluator divergences (stated)")
+              value =
+                if isAttrs m.t then
+                  comparisonSubject m.t
+                else if isFunction m.t then
+                  { fn = _: m.t; }
+                else
+                  m.t;
               sealed = true;
             }
           else
