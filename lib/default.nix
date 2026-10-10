@@ -57,10 +57,9 @@ let
   #                content; the digests decide.
   #   unmintable — no identity and no substitute; the decision compares the reified
   #                checker record.
-  #   unmigrated — the migration window: no producer has stamped this checker, so its
-  #                name is still all the decision has. This arm stays live until the
-  #                producer lands, and while it is live the relation is byte-for-byte
-  #                the shipped one — identity was then a pure function of `name`.
+  #   unmigrated — no producer has stamped this checker. A bucket label only: there is
+  #                no name arm (den-hoag-7gp66), so two such records are compared over
+  #                the whole reified record, like unmintable ones.
   identityOf =
     v:
     # a record whose `check` a wrapper rewrote keeps its base's `__mint`, which no longer states
@@ -99,7 +98,7 @@ let
       #
       # The consequence is deliberate: separately built foreign twins, and one leaf across two lib
       # instances, compare unequal. A record that lacks `__mint` AND `nestedTypes` (the
-      # pre-migration population) falls through to the name-only branch below.
+      # pre-migration population) is bucketed unmigrated and compared.
       { unmintable = v.name or "<unnamed>"; }
     else
       { unmigrated = v.name; };
@@ -142,8 +141,6 @@ let
     else if ia ? minted && ib ? minted then
       ia.minted == ib.minted
       && algebra.sealedCollisionEq "gen-types: typeEq" (subjectOf ia a) (subjectOf ib b)
-    else if ia ? unmigrated && ib ? unmigrated then
-      ia.unmigrated == ib.unmigrated
     else
       comparisonSubject a == comparisonSubject b;
 in

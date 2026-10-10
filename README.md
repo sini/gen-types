@@ -250,11 +250,11 @@ checker's identity REGIME rather than reading a single field:
 | ---------- | ----------------------------- | ------------------------------------------------- |
 | minted     | `__mint.minted`               | digest equality                                   |
 | unmintable | `__mint`, no `minted`         | Nix `==` on the checker record **minus `__okAt`** |
-| unmigrated | no `__mint`, no `nestedTypes` | `name` equality                                   |
+| unmigrated | no `__mint`, no `nestedTypes` | Nix `==` on the checker record **minus `__okAt`** |
 
 Every checker this library constructs is stamped. A nixpkgs `lib.types.*` record carries
 no `__mint` but does carry `nestedTypes`, and it takes the foreign rule below. So the
-**unmigrated** arm now serves only a record that carries neither. `__mint` is a tagged sum,
+**unmigrated** bucket holds only a record that carries neither, and it is compared like unmintable, with no name arm. `__mint` is a tagged sum,
 and a reader that branched on field presence and then read `.minted` raw would abort
 uncatchably on a checker that has no mintable identity.
 

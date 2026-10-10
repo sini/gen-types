@@ -375,20 +375,18 @@ in
     expected = false;
   };
 
-  # The UNMIGRATED arm stays live for a FOREIGN record — one this library did not build,
-  # or one built before the producer landed — and nothing gen-types constructs is one any
-  # more, so without this fixture the arm has no subject and reads green as silence.
-  flake.tests.types-identity.test-unmigrated-arm-still-decides-on-name = {
+  # There is no name arm: a record with neither `__mint` nor `nestedTypes` is compared over
+  # the whole reified record, so two built apart are not equal by name alone. The fixture
+  # keeps that population covered by a cell asserting the removal.
+  flake.tests.types-identity.test-unmigrated-records-are-not-equal-by-name = {
     expr = {
       sameName = t.typeEq (unmigratedChecker "foo") (unmigratedChecker "foo");
       differentName = t.typeEq (unmigratedChecker "foo") (unmigratedChecker "bar");
-      # CONTROL: a stamped checker on one side leaves the arm — the pair is no longer
-      # both-unmigrated, so it falls to the whole-record comparison rather than to a name
-      # match against a minted value.
+      # CONTROL: a stamped checker on one side was never a name match either.
       mixedWithMinted = t.typeEq (unmigratedChecker "int") t.int;
     };
     expected = {
-      sameName = true;
+      sameName = false;
       differentName = false;
       mixedWithMinted = false;
     };
