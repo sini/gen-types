@@ -29,10 +29,10 @@ let
     mkCompositeSealed
     mkIdentity
     completedType
+    typeWitness
     stampOk
     marksItsBase
     identityGuard
-    comparisonSubject
     verifiersOf
     rewritesCheck
     witnessedCheck
@@ -43,106 +43,7 @@ let
   validateLib = import ./validate.nix { inherit prelude; };
   strictLib = import ./strict.nix { inherit prelude; };
 
-  # The ONE access discipline over the three identity regimes, and it is TOTAL OVER
-  # THOSE THREE REGIMES — not over the two populations of the migration window, which
-  # is the narrower claim it replaced and which omits the sealed regime entirely.
-  # `__mint` is a TAGGED SUM, so no reader may branch on FIELD PRESENCE and then read
-  # `.minted` raw: on a value that has no mintable identity `v ? __mint` holds and
-  # `.minted` is absent, and that read aborts uncatchably rather than refusing. That is
-  # also why the readers below never call `idOf`: `idOf` is the DEMAND for an identity,
-  # and demanding one of a sealed checker is a refusal — so a reader that DECIDES must
-  # dispatch on the tag instead of demanding.
-  #
-  #   minted     — an identity over a preimage total in the checker's distinguishing
-  #                content; the digests decide.
-  #   unmintable — no identity and no substitute; the decision compares the reified
-  #                checker record.
-  #   unmigrated — no producer has stamped this checker. A bucket label only: there is
-  #                no name arm (den-hoag-7gp66), so two such records are compared over
-  #                the whole reified record, like unmintable ones.
-  identityOf =
-    v:
-    # a record whose `check` a wrapper rewrote keeps its base's `__mint`, which no longer states
-    # its domain: it is compared, never minted (den-hoag-ydro3)
-    if rewritesCheck v then
-      { unmintable = v.name or "<unnamed>"; }
-    else if v ? __mint && v.__mint ? minted then
-      { inherit (v.__mint) minted; }
-    else if v ? __mint then
-      { inherit (v.__mint) unmintable; }
-    else if v ? nestedTypes then
-      # ★ A FOREIGN RECORD IS COMPARED, NEVER MINTED (`den-hoag-hc755`; ADR-0034's compared limb).
-      # A nixpkgs-protocol record (`nestedTypes` present, no `__mint`) CLAIMS a constructor through
-      # its `name` and `nestedTypes` and DECLARES none, and ADR-0034 decides a regime "by
-      # CONSTRUCTOR at the declaration". Minting it from that claim is a name-only mint at every
-      # node, and it answered `true` for types accepting different values, measured on three
-      # routes: an `addCheck`'d `int` installed at `types.int` by `lib.extend` (reflexive, because
-      # nixpkgs' `functor.type = lib.types.${name}` is a late-bound lookup); a record whose
-      # `functor.type` is itself (gen-merge's `exportType`); and a composite carrying another's
-      # name — stock `nonEmptyListOf str` is named `listOf`, and `addCheck (listOf str) f` shares
-      # every inert datum with a separately built `listOf str`.
-      #
-      # ★ WHY NO NARROWER MINT EXISTS. MINTED needs a preimage TOTAL over the distinguishing content
-      # (ADR-0034 Consequence 1), and a foreign record's distinguishing content includes its
-      # closures' ENVIRONMENT — the lib instance they close over — which has no observable
-      # coordinate. Source positions (`unsafeGetAttrPos`) separate CODE, not environment: `listOf
-      # str` built from `lib.extend (_: _: { isList = _: false; })` has the stock record's check
-      # position, child and name and a different `check [ ]`, and an `mkOptionType { name = "str"; }`
-      # installed at `types.str` is reflexive at the stock positions while accepting other values
-      # (the same ground `den-hoag-t6iy2`/`xxybl` rejected a position discriminator on). A lib's
-      # `version` does not move under `lib.extend`. Structural identity returns only with a
-      # lib-instance revision, or with the type written in gen's own vocabulary: this library's
-      # constructors mint natively, and so do gen-merge's composites (`listOf`, `attrsOf`, `nullOr`,
-      # `either`, `submodule`, `deriveType`), through this library's `mkIdentity`, under the
-      # constructor names `gen-merge.<name>`.
-      #
-      # The consequence is deliberate: separately built foreign twins, and one leaf across two lib
-      # instances, compare unequal. A record that lacks `__mint` AND `nestedTypes` (the
-      # pre-migration population) is bucketed unmigrated and compared.
-      { unmintable = v.name or "<unnamed>"; }
-    else
-      { unmigrated = v.name; };
-
-  # CONSERVATIVE EQUALITY — Palmer's own term (§2.3, §5.3); "intensional" qualifies the
-  # FUNCTION and never the equality, and the misnomer is what read as a licence to
-  # compare intension alone. Palmer's Fig. 5 is a CONJUNCTION over identity AND closure,
-  # so a name-only relation ships one half of it and coarsens in the direction §2.3
-  # forbids.
-  #
-  # Where nothing is minted this compares THE REIFIED RECORD — minus
-  # `comparisonSubject`'s accessor exclusion — and never a list of components in its place:
-  # a projection decides only what it projects, and every attribute the record carries is
-  # distinguishing content. (A projection is not false against itself: selecting an attribute
-  # keeps its Value slot, so `comparisonSubject`'s closure prefix is `true` for a record
-  # against itself; it rides AHEAD of the record, never instead of it.)
-  # Finer is the safe direction for a type-equality decision — the failure a type
-  # discipline exists to exclude is admitting semantically distinct values under one
-  # type, i.e. returning TRUE wrongly.
-  # Both operands minted: distinct marks decide `false` and equal marks are decided over the two
-  # `__sealed` maps by gen-algebra's `sealedCollisionEq` — `true` when they are `==`, `false` when
-  # every differing leaf is an inert declared subject (two registered constructions), and a refusal
-  # by name otherwise (two separately written lambdas, which no `==` can tell apart from one).
   nameOf = v: if builtins.isString (v.name or null) then v.name else "<unnamed>";
-  subjectOf = i: v: {
-    name = if builtins.isString (v.name or null) then v.name else "<unnamed>";
-    mark = i.minted;
-    sealed = v.__sealed or { };
-  };
-  conservativeEq =
-    a: b:
-    let
-      ia = identityOf a;
-      ib = identityOf b;
-    in
-    if !(stampOk a) || !(stampOk b) then
-      throw "gen-types: typeEq: `${
-        nameOf (if stampOk a then b else a)
-      }' is not the record its constructor completed: a `//` over a type keeps its identity while changing what that identity stands for; build the change through a constructor"
-    else if ia ? minted && ib ? minted then
-      ia.minted == ib.minted
-      && algebra.sealedCollisionEq "gen-types: typeEq" (subjectOf ia a) (subjectOf ib b)
-    else
-      comparisonSubject a == comparisonSubject b;
 in
 # The checker constructor set IS the public surface; the fold-ins (refined/strict/
 # validators) and the identity helpers ride alongside it.
@@ -183,12 +84,40 @@ checkers
     defaultOnError
     ;
 
-  # ── conservative equality over checker identity ──
-  # Two checkers denote the same type when `conservativeEq` holds of them. The relation
-  # dispatches on the identity REGIME rather than reading a single field, so it covers
-  # minted, sealed and not-yet-stamped checkers alike — total but for the sealed arm's
-  # enumerated exception at `comparisonSubject`; see its definition above for why the sealed
-  # arm compares the whole record and why finer is the safe direction.
+  # ── conservative equality over checker identity: gen-algebra's, the ecosystem's one binding ──
+  # Two checkers denote the same type when `conservativeEq` holds of them, and `typeEq` IS
+  # gen-algebra's `conservativeEq`: one concept, one binding. This library supplies what that relation
+  # reads off its records and decides nothing itself. Every constructor here mints by construction
+  # (`mkIdentity`), and every record it completes declares its witnesses (`typeWitness`: the
+  # completion stamp `__typeSelf` and the check witness `_checkWitness`), so the one relation refuses a
+  # `//` copy by name and compares a record whose `check` a wrapper rewrote, where its mark no longer
+  # states its content.
+  #
+  # ★ A FOREIGN RECORD IS COMPARED, NEVER MINTED (ADR-0034's compared limb). A nixpkgs-protocol record
+  # (`nestedTypes` present, no `__mint`) CLAIMS a constructor through its `name` and `nestedTypes` and
+  # DECLARES none, and ADR-0034 decides a regime "by CONSTRUCTOR at the declaration". Minting it from
+  # that claim is a name-only mint at every node, and it answered `true` for types accepting different
+  # values, measured on three routes: an `addCheck`'d `int` installed at `types.int` by `lib.extend`
+  # (reflexive, because nixpkgs' `functor.type = lib.types.${name}` is a late-bound lookup); a record
+  # whose `functor.type` is itself (gen-merge's `exportType`); and a composite carrying another's name —
+  # stock `nonEmptyListOf str` is named `listOf`, and `addCheck (listOf str) f` shares every inert datum
+  # with a separately built `listOf str`.
+  #
+  # ★ WHY NO NARROWER MINT EXISTS. MINTED needs a preimage TOTAL over the distinguishing content
+  # (ADR-0034 Consequence 1), and a foreign record's distinguishing content includes its closures'
+  # ENVIRONMENT — the lib instance they close over — which has no observable coordinate. Source
+  # positions (`unsafeGetAttrPos`) separate CODE, not environment: `listOf str` built from
+  # `lib.extend (_: _: { isList = _: false; })` has the stock record's check position, child and name
+  # and a different `check [ ]`, and an `mkOptionType { name = "str"; }` installed at `types.str` is
+  # reflexive at the stock positions while accepting other values. A lib's `version` does not move
+  # under `lib.extend`. Structural identity returns only with a lib-instance revision, or with the type
+  # written in gen's own vocabulary: this library's constructors mint natively, and so do gen-merge's
+  # composites (`listOf`, `attrsOf`, `nullOr`, `either`, `submodule`, `deriveType`), through this
+  # library's `mkIdentity`, under the constructor names `gen-merge.<name>`.
+  #
+  # The consequence is deliberate: separately built foreign twins, and one leaf across two lib
+  # instances, compare unequal. A record that carries no `__mint` at all is compared over the whole
+  # reified record, closures first, `__okAt` included: no producer declared a subject for it.
   #
   # ★ THE EXPORTED NAME MOVES WITH THE RELATION. `conservativeEq` is Palmer's own term (§2.3,
   # §5.3, §8): "intensional" qualifies the FUNCTION and never the equality, and the name it
@@ -196,8 +125,8 @@ checkers
   # Fig. 5's conjunction the relation used to ship. `typeEq` stays as the domain-facing
   # spelling, the name a type discipline gives the decision whether two declarations carry
   # the same type.
-  typeEq = conservativeEq;
-  inherit conservativeEq;
+  typeEq = algebra.conservativeEq;
+  inherit (algebra) conservativeEq;
 
   # ── the identity DEMAND (den-hoag-6orb8 A1) ──
   # `idOf t` is the one way to DEMAND a type's identity: its minted digest where the record has an
@@ -296,13 +225,17 @@ checkers
   # carries (`__mint`, `__payload`, `__sealed`, and `__okAt` on a composite), so a type built
   # elsewhere (gen-schema's `refined`) is identified by the same construction and decided by the same
   # `typeEq`. See `mkIdentity` in `./checkers.nix`.
-  inherit mkIdentity comparisonSubject;
+  inherit mkIdentity;
+  # the compared regime's subject is the one `typeEq` reads: gen-algebra's
+  inherit (algebra) comparisonSubject;
 
   # ── the completion stamp's reader, for a boundary that rebuilds a type record ──
   # `stampOk t` holds when `t` is the record its constructor (or the last boundary) completed, and
   # fails on a `//` copy. gen-merge's protocol boundary reads it on import and re-ties the stamp to the
   # record it completes (see `completedType` in `./checkers.nix`).
   inherit stampOk;
+  # the witness declaration a boundary completing a type record carries beside `__typeSelf`
+  inherit typeWitness;
 
   # ── the type-identity guard, for a producer outside this library ──
   # A construct that mints over a member's `__mint` must step the same index or it reopens the

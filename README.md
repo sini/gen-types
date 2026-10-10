@@ -241,16 +241,27 @@ t.defaultOnError left;                       # throws a formatted error
 
 ### Conservative equality over checker identity
 
-Two checkers denote the same type when `typeEq` (equivalently `conservativeEq`) holds of
-them. The relation is Palmer's **conservative equality** (§2.3, §5.3 — his own term;
-"intensional" qualifies the *function*, never the equality), and it dispatches on the
-checker's identity REGIME rather than reading a single field:
+Two checkers denote the same type when `typeEq` holds of them. `typeEq` is gen-algebra's
+`conservativeEq`, the ecosystem's one equality binding, exported here under both names. The
+relation is Palmer's **conservative equality** (§2.3, §5.3 — his own term; "intensional"
+qualifies the *function*, never the equality). This library decides nothing itself: it declares
+what the relation reads off its records.
 
-| regime     | the checker carries           | the relation                                      |
-| ---------- | ----------------------------- | ------------------------------------------------- |
-| minted     | `__mint.minted`               | digest equality                                   |
-| unmintable | `__mint`, no `minted`         | Nix `==` on the checker record **minus `__okAt`** |
-| unmigrated | no `__mint`, no `nestedTypes` | Nix `==` on the checker record **minus `__okAt`** |
+**Every completed type declares its witnesses.** A type record carries `__witness = typeWitness`,
+`{ completion = "__typeSelf"; checks = { check = "_checkWitness"; }; }`, beside its mark. The
+relation reads it first. A `//` copy departs from the record its completion stamp returns and is
+refused by name. A record whose `check` no longer holds its witness (a wrapper rewrote it) keeps its
+base's mark only as a bucket label and is compared. Then it dispatches on the checker's identity
+REGIME rather than reading a single field:
+
+| regime     | the checker carries           | the relation                                       |
+| ---------- | ----------------------------- | -------------------------------------------------- |
+| minted     | `__mint.minted`               | digest equality                                    |
+| unmintable | `__mint`, no `minted`         | Nix `==` on the checker record, its closures first |
+| unmigrated | no `__mint`, no `nestedTypes` | Nix `==` on the checker record, its closures first |
+
+`typeWitness` is exported for a boundary that ties the completion stamp on a record it builds
+itself (gen-merge's doors). It is a value, not a type.
 
 Every checker this library constructs is stamped. A nixpkgs `lib.types.*` record carries
 no `__mint` but does carry `nestedTypes`, and it takes the foreign rule below. So the
@@ -484,8 +495,8 @@ literal two-slot shape, beside its partner at `true` on all three:
 
 | site (binding)                                                                                                                                                       | the shape that splits: Nix / Determinate / Lix                                                                      | the partner a closure would move (`true` ×3)                                                                       | what would close it                                                |
 | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------ |
-| `lib/default.nix` `conservativeEq`, the compared arm `comparisonSubject a == comparisonSubject b`                                                                    | a nixpkgs type and a `mapAttrs` copy of it (`listOf int`, `enum [ "a" "b" ]`): `false` / `false` / `true`           | a foreign type against itself, `typeEq lib.types.str lib.types.str`                                                | foreign types migrating to gen-native ones, which mint             |
-| `lib/checkers.nix` `stampAgrees`, through `stampOk`                                                                                                                  | `int // { verify = int.verify; }` (and `check`) against `int`: refused / refused / `true`                           | `typeEq int int`                                                                                                   | the planned migration of `verify` and `check` to first-order terms |
+| gen-algebra `lib/intensional.nix` `conservativeEq`, the compared arm `comparisonSubject a == comparisonSubject b`                                                    | a nixpkgs type and a `mapAttrs` copy of it (`listOf int`, `enum [ "a" "b" ]`): `false` / `false` / `true`           | a foreign type against itself, `typeEq lib.types.str lib.types.str`                                                | foreign types migrating to gen-native ones, which mint             |
+| gen-algebra `lib/intensional.nix` `stampAgrees`, reading the completion stamp `typeWitness` declares                                                                 | `int // { verify = int.verify; }` (and `check`) against `int`: refused / refused / `true`                           | `typeEq int int`                                                                                                   | the planned migration of `verify` and `check` to first-order terms |
 | `lib/checkers.nix` `sealedArg`, a constructor's caller predicate sealed in the slot it was passed in, through `typedef`, `typedef'` and `struct`'s `verify` override | one predicate passed by selection to two constructions (`typedef "even" ev.even` twice): refused / refused / `true` | one bound predicate in two constructions, `typedef "even" even` twice (`types-identity-sealed`, `sharedPredicate`) | the planned migration of the caller lambda to a first-order term   |
 | `lib/refined.nix`, a refinement record's `check` slice                                                                                                               | one `check` passed by selection to two refinements: refused / refused / `true`                                      | one bound `check` in two refinements                                                                               | the same migration of the caller's `check`                         |
 

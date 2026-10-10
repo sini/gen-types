@@ -507,9 +507,10 @@ in
     expected = "type:stored-not-the-payload-digest";
   };
 
-  # The compared subject excludes `__okAt` and nothing else: a field named `__id` is ordinary content
-  # now that no producer carries a refusal under it. Reds on a build that still strips it.
-  flake.tests.types-identity.test-comparison-subject-keeps-every-field-but-okAt = {
+  # The compared subject is gen-algebra's, the one `typeEq` reads, and it excludes nothing: a field
+  # named `__id` is ordinary content now that no producer carries a refusal under it, and `__okAt` is
+  # content too. Reds on a build that strips either, or exports a subject `typeEq` does not read.
+  flake.tests.types-identity.test-comparison-subject-is-the-relation-s-and-keeps-every-field = {
     expr =
       let
         s = builtins.elemAt (t.comparisonSubject (t.checkedListOf t.int // { __id = "kept"; })) 1;
@@ -520,7 +521,7 @@ in
       };
     expected = {
       id = "kept";
-      okAt = false;
+      okAt = true;
     };
   };
 }

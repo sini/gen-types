@@ -343,9 +343,13 @@ let
       reason = depthReason;
     };
 
-  # The comparison SUBJECT for the sealed arm: the reified record MINUS `__okAt`, and minus nothing
-  # else — preceded by its own closure fields (below). A checker carries no refusal-valued field:
-  # demanding an identity is `idOf`, a function, so nothing a comparison forces detonates.
+  # The SUBJECT a sealed MEMBER enters `__sealed` under (`mkIdentity` below): the reified record
+  # MINUS `__okAt`, and minus nothing else — preceded by its own closure fields (below). It is this
+  # library's projection, kept private: the relation that DECIDES two types is gen-algebra's
+  # `conservativeEq`, whose own `comparisonSubject` this library exports.
+  #
+  # A checker carries no refusal-valued field: demanding an identity is `idOf`, a function, so
+  # nothing a comparison forces detonates.
   # `__mint.minted` cannot refuse inside one either: the minted and sealed arms live under DIFFERENT
   # KEY NAMES, and Nix `==` decides on the name set before forcing any value (measured, with its
   # control: a throwing payload under a differently-named key is never reached, while the SAME name on
@@ -396,7 +400,7 @@ let
   # ★ A DECLARED SUBJECT IS THE SUBJECT: a registered construction (gen-algebra `mkIntensional`)
   # names its comparison subject, its registry coordinate, constructor and inert arguments, and that
   # is answered instead of the record, whose `fn` is a lambda rebuilt per construction.
-  comparisonSubject =
+  memberSubject =
     v:
     if algebra.hasDeclaredSubject v then
       v.__mint.unmintable.subject
@@ -431,7 +435,7 @@ let
   #
   # Beside the mark the type carries `__sealed`, gen-algebra `componentsPreimage`'s map from each
   # sealed component's path to its comparison subject: a sealed member as this library's
-  # `comparisonSubject` of it (closures first), a member that is a function as a closure allocated per
+  # `memberSubject` of it (closures first), a member that is a function as a closure allocated per
   # construction (it has no identity, so two constructions over it are two subjects), a constructor's
   # own caller lambda in its own slot, a registered construction
   # as `{ compared = <its declared subject>; }`, and a minted member that itself seals something as
@@ -497,7 +501,7 @@ let
               # every evaluator (gen-types README, "Evaluator divergences (stated)")
               value =
                 if isAttrs m.t then
-                  comparisonSubject m.t
+                  memberSubject m.t
                 else if isFunction m.t then
                   { fn = _: m.t; }
                 else
@@ -568,7 +572,7 @@ let
       # inert: no lambda, no path, no derivation. A sealed component appears in it as
       # `sealedMarker`, and `payloadOf` refuses a record whose `__sealed` is non-empty.
       #
-      # ★ ON THE COMPARED REGIME THIS FIELD JOINS `comparisonSubject`'s record (lib/default.nix),
+      # ★ ON THE COMPARED REGIME THIS FIELD JOINS `comparisonSubject`'s record (gen-algebra's),
       # which can only make `==` finer, never turn false into true. Its two arms sit under different
       # key names, the shielding `__mint` uses, so a sealed-against-minted pair decides on the name
       # set before either value is forced. A `//`-derived record can carry a `minted` payload beside
@@ -613,9 +617,18 @@ let
     let
       s = r // {
         __typeSelf = _: s;
+        __witness = typeWitness;
       };
     in
     s;
+  # The witness declaration gen-algebra's `conservativeEq` reads (its `__witness`): the completion stamp,
+  # and the check-witness protocol below.
+  typeWitness = {
+    completion = "__typeSelf";
+    checks = {
+      check = "_checkWitness";
+    };
+  };
   stampAgrees =
     let
       defined = v: (builtins.tryEval (builtins.seq v true)).success;
@@ -1142,6 +1155,7 @@ in
 {
   checkers = self;
   inherit
+    typeWitness
     mkChecker
     mkComposite
     mkCompositeSealed
@@ -1151,7 +1165,6 @@ in
     stampHolds
     marksItsBase
     identityGuard
-    comparisonSubject
     verifiersOf
     rewritesCheck
     witnessedCheck

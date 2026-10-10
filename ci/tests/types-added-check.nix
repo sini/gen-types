@@ -57,6 +57,48 @@ in
     };
   };
 
+  # ★ R: A RECORD RE-TIED OVER A REWRITTEN CHECK IS COMPARED, NOT DECIDED BY ITS BASE'S MARK. A boundary
+  # completes a record over `int` with a witnessed `check` and ties its stamp (`typeWitness` declared, as
+  # gen-merge's doors do); a wrapper then rewrites the `check` and the boundary re-ties the stamp over the
+  # rewrite. The stamp holds, so the completion witness does not decide it: the declared check witness
+  # does, and the record keeps `int`'s mark only as a bucket label. RED with the `checks` half of the
+  # declaration unread (`retiedIsBase` reads `true`: the two marks are one digest). The twins decide
+  # `true`, so a relation separating everything cannot pass.
+  flake.tests.types-added-check.test-a-record-retied-over-a-rewritten-check-is-compared =
+    let
+      tie =
+        r:
+        let
+          s = r // {
+            __typeSelf = _: s;
+            __witness = t.typeWitness;
+          };
+        in
+        s;
+      completed = tie (t.int // t.witnessedCheck (x: t.int.verify x == null));
+      # nixpkgs' `addCheck`, as its v1 form writes it: every field copied, `check` rewritten
+      addCheck = elemType: check: elemType // { check = x: elemType.check x && check x; };
+      retied = tie (addCheck completed (n: n < 3));
+    in
+    {
+      expr = {
+        stampHolds = t.stampOk retied;
+        rewritten = t.rewritesCheck retied;
+        sameMark = retied.__mint == completed.__mint;
+        retiedIsBase = t.typeEq completed retied;
+        completedIsItself = t.typeEq completed completed;
+        retiedIsItself = t.typeEq retied retied;
+      };
+      expected = {
+        stampHolds = true;
+        rewritten = true;
+        sameMark = true;
+        retiedIsBase = false;
+        completedIsItself = true;
+        retiedIsItself = true;
+      };
+    };
+
   # the published surface, pinned: the protocol adds exactly `rewritesCheck`, `witnessedCheck` and
   # `witnessRecord`
   flake.tests.types-added-check.test-lib-surface = {
@@ -104,6 +146,7 @@ in
       "struct"
       "tuple"
       "typeEq"
+      "typeWitness"
       "typedef"
       "typedef'"
       "union"
