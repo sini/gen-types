@@ -249,10 +249,95 @@ in
     };
   };
 
-  # ★ CLOSED BY CONSTRUCTION (`mkIdentity`'s member arm, `refined`'s bare refinement): a member that is
-  # a function has no identity, so two constructions over it are refused on all three evaluators,
-  # where Lix used to answer `true` through two slots of one function. One construction against
-  # itself stays `true` ×3. RED on Lix with either arm's closure reverted.
+  # A refinement is a `{ check, message }` record; any other shape is refused BY NAME where `refined`
+  # takes it, catchably, where it used to abort uncatchably when a value was first checked
+  # (den-hoag-c9cr1, the gen-schema den-hoag-ub19x class). Each refusal names the position and the fault.
+  flake.testsError.types-refined =
+    let
+      refuses = fault: {
+        type = "ThrownError";
+        msg = "^gen-types: refined: refinement ${fault}\\. A refinement is a record `\\{ check = <value -> bool>; message = \"<what a violation reports>\"; \\}`; ";
+      };
+      rt = r: t.refined t.int r;
+      ok = {
+        check = pos;
+        message = "positive";
+      };
+    in
+    {
+      test-a-bare-function-refinement-is-refused = {
+        expr = rt pos;
+        expectedError = refuses "0 is of type `lambda`, not a refinement record";
+      };
+      test-a-string-refinement-is-refused = {
+        expr = rt "x";
+        expectedError = refuses "0 is of type `string`, not a refinement record";
+      };
+      test-an-int-refinement-is-refused = {
+        expr = rt 3;
+        expectedError = refuses "0 is of type `int`, not a refinement record";
+      };
+      test-a-refinement-without-check-is-refused = {
+        expr = rt { message = "m"; };
+        expectedError = refuses "0 has no `check`";
+      };
+      test-a-refinement-without-message-is-refused = {
+        expr = rt { check = pos; };
+        expectedError = refuses "0 has no `message`";
+      };
+      test-a-refinement-with-a-non-function-check-is-refused = {
+        expr = rt {
+          check = 3;
+          message = "m";
+        };
+        expectedError = refuses "0 has a `check` of type `int`, not a function";
+      };
+      test-a-refinement-with-a-non-string-message-is-refused = {
+        expr = rt {
+          check = pos;
+          message = 3;
+        };
+        expectedError = refuses "0 has a `message` of type `int`, not a string";
+      };
+      test-the-position-of-a-bad-refinement-in-a-list-is-named = {
+        expr = rt [
+          ok
+          pos
+        ];
+        expectedError = refuses "1 is of type `lambda`, not a refinement record";
+      };
+      # controls, same plane: a record, a list of records and a functor check are taken
+      test-control-a-record-refinement-is-taken = {
+        expr = (rt ok).verify (-1);
+        expected = "positive";
+      };
+      test-control-a-list-of-records-is-taken = {
+        expr =
+          (rt [
+            ok
+            t.refinements.tcpPort
+          ]).verify
+            70000;
+        expected = "must be a valid TCP port (1-65535)";
+      };
+      test-control-a-functor-check-is-taken = {
+        expr =
+          (rt {
+            check = {
+              __functor = _: pos;
+            };
+            message = "positive";
+          }).verify
+            (-1);
+        expected = "positive";
+      };
+    };
+
+  # ★ CLOSED BY CONSTRUCTION (`mkIdentity`'s member arm): a member that is a function has no identity,
+  # so two constructions over it are refused on all three evaluators, where Lix used to answer `true`
+  # through two slots of one function. One construction against itself stays `true` ×3. RED on Lix
+  # with the arm's closure reverted. (`refined`'s bare-function refinement arm is gone: a refinement
+  # that is not a `{ check, message }` record is refused where it enters, `types-refined` below.)
   flake.testsError.types-evaluator-divergences = {
     test-a-function-member-in-two-constructions-is-refused-on-every-evaluator = {
       expr = teq (t.checkedListOf sl.enumFn) (t.checkedListOf sl.enumFn);
@@ -277,24 +362,6 @@ in
           x = t.checkedListOf sl.enumFn;
         in
         verdict (algebra.conservativeEq x x);
-      expected = true;
-    };
-    test-a-bare-function-refinement-in-two-constructions-is-refused-on-every-evaluator = {
-      expr = {
-        bound = teq (t.refined t.int [ pos ]) (t.refined t.int [ pos ]);
-        selected = teq (t.refined t.int [ sl.pos ]) (t.refined t.int [ sl.pos ]);
-      };
-      expected = {
-        bound = "REFUSED";
-        selected = "REFUSED";
-      };
-    };
-    test-a-bare-function-refinement-in-one-construction-is-itself = {
-      expr =
-        let
-          x = t.refined t.int [ pos ];
-        in
-        teq x x;
       expected = true;
     };
 

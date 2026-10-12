@@ -109,10 +109,10 @@ read by other libraries off plain data; `__mint`'s contract is gen-algebra's, wh
 
 **Refinement contracts** — `lib/refined.nix`
 
-| Export        | Signature                                                                                               |
-| ------------- | ------------------------------------------------------------------------------------------------------- |
-| `refined`     | `checker -> (refinement \| [refinement]) -> checker`; a refinement is `{ check = v -> bool; message; }` |
-| `refinements` | `{ nonEmpty; positive; tcpPort; }` — the stock predicate records                                        |
+| Export        | Signature                                                                                                                                                   |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `refined`     | `checker -> (refinement \| [refinement]) -> checker`; a refinement is `{ check = v -> bool; message; }`; any other shape is refused by name at construction |
+| `refinements` | `{ nonEmpty; positive; tcpPort; }` — the stock predicate records                                                                                            |
 
 **Closed-world keys** — `lib/strict.nix`
 

@@ -209,7 +209,10 @@ t.typedef' "even" (v: if ... then null else "must be even"); # from an option<st
 ### Refinement contracts
 
 A base checker plus predicate contracts (`{ check = v: bool; message; }`). The base is
-verified first, then predicates in a single pass.
+verified first, then predicates in a single pass. A refinement that is not such a record (a bare
+predicate, a record without `check` or `message`, a non-function `check`, a non-string `message`) is
+refused by name, catchably, where `refined` takes it, because a predicate without its message has no
+blame to report.
 
 ```nix
 t.refined t.int t.refinements.positive          # int, and > 0
@@ -483,8 +486,8 @@ three one verdict without moving a verdict they already share, it does:
 - **A member that is a function** (`mkIdentity`, `lib/checkers.nix`), such as the unapplied `enum`
   in `checkedListOf (enum [ "a" "b" ])`, is no type record and gets no identity. Its sealed subject is
   a closure allocated per construction, so two constructions over it are refused on all three
-  evaluators and one construction is `true` against itself on all three. A bare function refinement
-  of `refined` (`lib/refined.nix`) is sealed the same way.
+  evaluators and one construction is `true` against itself on all three. (`refined` has no such arm: a
+  bare function refinement is refused where it enters, see "Refinement contracts".)
 
 The sites below cannot close that way. Lix gives one verdict to operands holding the same function
 objects, so a construction that moved a split verdict on Lix would move the verdict of its partner

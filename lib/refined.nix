@@ -18,6 +18,38 @@ let
 
   normalize = r: if isList r then r else [ r ];
 
+  # A refinement is a RECORD `{ check; message; }` (Findler 2002: a predicate paired with the blame it
+  # reports). `message` is not decoration: the first failing refinement is reported BY ITS MESSAGE,
+  # and a bare predicate has none, so it is refused rather than given an invented one. The shape is
+  # decided where the refinement enters, because `firstFailingRefinement` and the identity slices
+  # select `check` and `message` off it and a selection off any other shape aborts uncatchably.
+  refinementFault =
+    r:
+    if !(builtins.isAttrs r) then
+      "is of type `${builtins.typeOf r}`, not a refinement record"
+    else if !(r ? check) then
+      "has no `check`"
+    else if !(builtins.isFunction r.check || (r.check ? __functor)) then
+      "has a `check` of type `${builtins.typeOf r.check}`, not a function"
+    else if !(r ? message) then
+      "has no `message`"
+    else if !(builtins.isString r.message) then
+      "has a `message` of type `${builtins.typeOf r.message}`, not a string"
+    else
+      null;
+
+  # assertRefinements : [ any ] -> true — each refinement of `rs`, refused by name and by position.
+  assertRefinements =
+    rs:
+    builtins.all (
+      i:
+      let
+        fault = refinementFault (elemAt rs i);
+      in
+      fault == null
+      || throw "gen-types: refined: refinement ${toString i} ${fault}. A refinement is a record `{ check = <value -> bool>; message = \"<what a violation reports>\"; }`; a bare predicate has no message to report, so write it as `{ check = <predicate>; message = \"…\"; }`."
+    ) (builtins.genList (i: i) (length rs));
+
   # Predicate-first-failure with the same single-pass/rescan discipline as the
   # collection combinators in checkers.nix.
   firstFailingRefinement =
@@ -70,21 +102,13 @@ in
       render = renderNode "refined" "refined<" "" ">" [ base ];
       baseVerify = builtins.head (verifiersOf "refined" [ base ]);
     in
+    assert assertRefinements refs;
     completedType (
       mkCompositeSealed "refined" [ base ]
         (tags: {
           base = builtins.head tags;
-          # a refinement's `check` is sealed; one with no `check` is inert and enters whole, and one
-          # that is not a record is sealed whole
-          refinements = map (
-            r:
-            if !(builtins.isAttrs r) then
-              sealedMarker
-            else if r ? check then
-              r // { check = sealedMarker; }
-            else
-              r
-          ) refs;
+          # a refinement's `check` is sealed (every refinement is a record with one, `assertRefinements`)
+          refinements = map (r: r // { check = sealedMarker; }) refs;
         })
         (builtins.concatLists (
           builtins.genList (
@@ -96,25 +120,13 @@ in
                 (toString i)
               ];
             in
-            if !(builtins.isAttrs r) then
-              [
-                {
-                  inherit path;
-                  # a bare function refinement has no identity: a closure per construction, as
-                  # `mkIdentity` gives a function member
-                  value = if builtins.isFunction r then { fn = _: r; } else r;
-                }
-              ]
-            else if !(r ? check) then
-              [ ]
-            else
-              [
-                {
-                  inherit path;
-                  # a slice keeps the check's slot, where a selection would be a fresh thunk
-                  value = if hasDeclaredSubject r.check then r.check else builtins.intersectAttrs { check = null; } r;
-                }
-              ]
+            [
+              {
+                inherit path;
+                # a slice keeps the check's slot, where a selection would be a fresh thunk
+                value = if hasDeclaredSubject r.check then r.check else builtins.intersectAttrs { check = null; } r;
+              }
+            ]
           ) (length refs)
         ))
         render
