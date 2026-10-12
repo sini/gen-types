@@ -16,39 +16,41 @@ let
     length
     ;
 
-  normalize = r: if isList r then r else [ r ];
-
   # A refinement is a RECORD `{ check; message; }` (Findler 2002: a predicate paired with the blame it
   # reports). `message` is not decoration: the first failing refinement is reported BY ITS MESSAGE,
   # and a bare predicate has none, so it is refused rather than given an invented one. The shape is
   # decided where the refinement enters, because `firstFailingRefinement` and the identity slices
   # select `check` and `message` off it and a selection off any other shape aborts uncatchably.
-  refinementFault =
+  # normalize : refinement | [ refinement ] -> [ refinement ] — the list a refinement argument denotes,
+  # every member checked against the record shape and refused by name and by position.
+  normalize =
     r:
-    if !(builtins.isAttrs r) then
-      "is of type `${builtins.typeOf r}`, not a refinement record"
-    else if !(r ? check) then
-      "has no `check`"
-    else if !(builtins.isFunction r.check || (r.check ? __functor)) then
-      "has a `check` of type `${builtins.typeOf r.check}`, not a function"
-    else if !(r ? message) then
-      "has no `message`"
-    else if !(builtins.isString r.message) then
-      "has a `message` of type `${builtins.typeOf r.message}`, not a string"
-    else
-      null;
-
-  # assertRefinements : [ any ] -> true — each refinement of `rs`, refused by name and by position.
-  assertRefinements =
-    rs:
-    builtins.all (
+    let
+      refs = if isList r then r else [ r ];
+      refusal =
+        r:
+        if !(builtins.isAttrs r) then
+          "is of type `${builtins.typeOf r}`, not a refinement record"
+        else if !(r ? check) then
+          "has no `check`"
+        else if !(builtins.isFunction r.check || (r.check ? __functor)) then
+          "has a `check` of type `${builtins.typeOf r.check}`, not a function"
+        else if !(r ? message) then
+          "has no `message`"
+        else if !(builtins.isString r.message) then
+          "has a `message` of type `${builtins.typeOf r.message}`, not a string"
+        else
+          null;
+    in
+    assert builtins.all (
       i:
       let
-        fault = refinementFault (elemAt rs i);
+        reason = refusal (elemAt refs i);
       in
-      fault == null
-      || throw "gen-types: refined: refinement ${toString i} ${fault}. A refinement is a record `{ check = <value -> bool>; message = \"<what a violation reports>\"; }`; a bare predicate has no message to report, so write it as `{ check = <predicate>; message = \"…\"; }`."
-    ) (builtins.genList (i: i) (length rs));
+      reason == null
+      || throw "gen-types: refined: refinement ${toString i} ${reason}. A refinement is a record `{ check = <value -> bool>; message = \"<what a violation reports>\"; }`; a bare predicate has no message to report, so write it as `{ check = <predicate>; message = \"…\"; }`."
+    ) (builtins.genList (i: i) (length refs));
+    refs;
 
   # Predicate-first-failure with the same single-pass/rescan discipline as the
   # collection combinators in checkers.nix.
@@ -102,12 +104,13 @@ in
       render = renderNode "refined" "refined<" "" ">" [ base ];
       baseVerify = builtins.head (verifiersOf "refined" [ base ]);
     in
-    assert assertRefinements refs;
+    # forced with the type: the shape refusal is not left to the first reader of `refs`
+    assert builtins.isList refs;
     completedType (
       mkCompositeSealed "refined" [ base ]
         (tags: {
           base = builtins.head tags;
-          # a refinement's `check` is sealed (every refinement is a record with one, `assertRefinements`)
+          # a refinement's `check` is sealed (every refinement is a record with one, `normalize`)
           refinements = map (r: r // { check = sealedMarker; }) refs;
         })
         (builtins.concatLists (
