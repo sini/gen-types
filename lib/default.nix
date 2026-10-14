@@ -193,7 +193,7 @@ checkers
       && t ? __mint
       && builtins.isAttrs t.__mint
       && t.__mint ? minted
-      && !(rewritesCheck t)
+      && !(core.rewritesMark t)
       && t ? __payload
       && builtins.isAttrs t.__payload
       && t.__payload ? minted
@@ -210,7 +210,7 @@ checkers
       }' has no readable construction payload: ${
         if !(builtins.isAttrs t && t ? __mint && builtins.isAttrs t.__mint && t.__mint ? minted) then
           "its identity is not minted"
-        else if rewritesCheck t then
+        else if core.rewritesMark t then
           "a wrapper rewrote its `check', so the construction its `__mint' names is its base's, not its own"
         else if !(t ? __payload && builtins.isAttrs t.__payload && t.__payload ? minted) then
           "it carries no minted `__payload'"

@@ -465,9 +465,9 @@ let
     t:
     !(isAttrs t)
     || !(t ? __mint && isAttrs t.__mint && t.__mint ? minted)
-    || rewritesCheck t
+    || rewritesMark t
     || !(stampHolds t);
-  marksItsBase = t: rewritesCheck t || !(stampOk t);
+  marksItsBase = t: rewritesMark t || !(stampOk t);
   tagOf = t: if isSealedMember t then algebra.sealedMarker else t.__mint.minted;
   mkIdentity =
     ctor: members: mkArgs: sealed: name:
@@ -754,6 +754,18 @@ let
   # over it is the one record whose `check` no longer holds the witness. Total over records whose
   # `check` reaches WHNF: a record with no witness (this library's own checkers) answers `false`.
   rewritesCheck = t: t ? _checkWitness && t ? check && t.check != t._checkWitness;
+  # The same question asked of the MARK: whether a field the record's mark was minted over no longer holds its
+  # witness, read through the producer's declared witness (`__witness.checks`, the declaration gen-algebra's
+  # `conservativeEq` reads), and through this library's own pair where none is declared. It answers as
+  # `rewritesCheck` for every record declaring `typeWitness` or nothing; a producer whose `_checkWitness` states
+  # something other than what its mark was minted over (gen-merge's met record, whose pair states the meet's
+  # debt) declares no check witness and is guarded by its completion stamp alone.
+  rewritesMark =
+    t:
+    let
+      cs = (t.__witness or typeWitness).checks or { };
+    in
+    builtins.any (n: t ? ${n} && t ? ${cs.${n}} && t.${n} != t.${cs.${n}}) (attrNames cs);
 
   # The nixpkgs-protocol `check` a producer publishes over a domain `fn`, with its witness: one
   # functor record `{ __functor; _fn; }` bound once and published twice, so `rewritesCheck`
@@ -1167,6 +1179,7 @@ in
     identityGuard
     verifiersOf
     rewritesCheck
+    rewritesMark
     witnessedCheck
     witnessRecord
     renderNode
