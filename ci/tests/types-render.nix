@@ -93,7 +93,7 @@ in
     expr =
       (t.union [
         t.int
-        t.attrs
+        t.checkedAttrs
       ]).verify
         { a = 1 + "a"; };
     expected = null;
@@ -112,7 +112,7 @@ in
     expr =
       (t.union [
         t.int
-        t.attrs
+        t.checkedAttrs
       ]).verify
         "s";
     expected = "expected type 'union<int,attrs>' but value \"s\" is of type 'string'";

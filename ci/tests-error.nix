@@ -224,7 +224,7 @@ in
     expr =
       (t.union [
         t.function
-        t.attrs
+        t.checkedAttrs
       ]).verify
         { __functor = _: throw "b5qdr: the functor's own error"; };
     expectedError = {
@@ -240,7 +240,7 @@ in
     expr =
       (t.union [
         t.path
-        t.attrs
+        t.checkedAttrs
       ]).verify
         { __toString = _: throw "fyx6m: the coercion's own error"; };
     expectedError = {

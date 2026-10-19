@@ -920,7 +920,7 @@ let
       v: prelude.isStringLike v && (isDerivation v || substring 0 1 (toString v) == "/")
     );
     pathLike = prim "pathLike" prelude.isStringLike;
-    attrs = prim "attrs" isAttrs;
+    checkedAttrs = prim "attrs" isAttrs;
     list = prim "list" isList;
     # nixpkgs' `lib.isFunction`, read by name from gen-prelude: a functor whose `__functor` returns a
     # function is a function, as `setFunctionArgs`, `witnessedCheck` and `prelude.door` build.

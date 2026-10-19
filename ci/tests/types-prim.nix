@@ -73,11 +73,11 @@ in
     expected = "expected type 'pathLike' but value 1 is of type 'int'";
   };
   flake.tests.types-prim.test-attrs-ok = {
-    expr = t.attrs.verify { a = 1; };
+    expr = t.checkedAttrs.verify { a = 1; };
     expected = null;
   };
   flake.tests.types-prim.test-attrs-fail = {
-    expr = t.attrs.verify [ 1 ];
+    expr = t.checkedAttrs.verify [ 1 ];
     expected = "expected type 'attrs' but value [ … (1 element) ] is of type 'list'";
   };
   flake.tests.types-prim.test-list-ok = {

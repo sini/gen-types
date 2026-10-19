@@ -80,7 +80,7 @@ read by other libraries off plain data; `__mint`'s contract is gen-algebra's, wh
 | `number`               | int or float                                                                                                 |
 | `path`                 | nixpkgs' `types.path`: `lib.isStringLike` (gen-prelude's), and absolute (a derivation counts as absolute)    |
 | `pathLike`             | nixpkgs' `types.pathWith { }`: `lib.isStringLike` (gen-prelude's): string, path, or a set `toString` coerces |
-| `attrs`, `list`        | `isAttrs` / `isList`                                                                                         |
+| `checkedAttrs`, `list` | `isAttrs` / `isList`                                                                                         |
 | `function`             | nixpkgs' `lib.isFunction` (gen-prelude's): a lambda, or a functor whose `__functor` returns a function       |
 | `derivation`           | attrset with `type == "derivation"`                                                                          |
 | `null`                 | `v == null`                                                                                                  |
@@ -98,7 +98,7 @@ read by other libraries off plain data; `__mint`'s contract is gen-algebra's, wh
 | `tuple`                            | `[checker] -> checker` (positional, length-exact)                                                                                                                                                                                                         |
 | `optionalAttr`                     | `checker -> checker` (flags a struct member omittable)                                                                                                                                                                                                    |
 | `struct`                           | `name -> { <member> = checker; } -> checker`, starting from the policy set `total = true`, `unknown = true`, `verify = null`; `.override delta` replaces the fields `delta` names, retains the rest, and rebinds `.override` over the new set (chainable) |
-| `listOf` / `attrsOf` / `option`    | tombstones: each throws by name and names its `checked*` successor (gen-merge keeps these names for its option types; grammar R10 rule 3)                                                                                                                 |
+| `listOf` / `attrsOf` / `option`    | tombstones: each throws by name and names its `checked*` successor (gen-merge keeps these names for its option types; grammar R10 rule 3); so does the nullary `attrs` (`checkedAttrs`)                                                                   |
 
 **Custom constructors** — `lib/checkers.nix`
 
@@ -225,7 +225,7 @@ nix eval --json .#lib --apply 'l: { top = builtins.attrNames l; refinements = bu
 Current output (verbatim):
 
 ```json
-{"refinements":["nonEmpty","positive","tcpPort"],"top":["any","attrs","attrsOf","bool","checkedAttrsOf","checkedListOf","checkedOption","comparisonSubject","conservativeEq","defaultOnError","derivation","enum","float","formatErrors","function","idOf","identityGuard","int","intersection","list","listOf","mkIdentity","mkValidator","never","null","number","option","optionalAttr","path","pathLike","payloadOf","refined","refinements","rewritesCheck","runValidators","stampOk","str","strict","string","struct","tuple","typeEq","typeWitness","typedef","typedef'","union","witnessRecord","witnessedCheck"]}
+{"refinements":["nonEmpty","positive","tcpPort"],"top":["any","attrs","attrsOf","bool","checkedAttrs","checkedAttrsOf","checkedListOf","checkedOption","comparisonSubject","conservativeEq","defaultOnError","derivation","enum","float","formatErrors","function","idOf","identityGuard","int","intersection","list","listOf","mkIdentity","mkValidator","never","null","number","option","optionalAttr","path","pathLike","payloadOf","refined","refinements","rewritesCheck","runValidators","stampOk","str","strict","string","struct","tuple","typeEq","typeWitness","typedef","typedef'","union","witnessRecord","witnessedCheck"]}
 ```
 
 `refinements` is the only nested namespace of exports on `lib` (nullary checker records are attrsets too; an `isAttrs` sweep returns 16 names). `override` and `__refinements` are fields of returned checker VALUES, not exports, so they do not appear above.

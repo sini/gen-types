@@ -90,7 +90,7 @@ t.int.check "x" "x"         # => throws the error above
 
 ### Primitives
 
-`string` / `str`, `int`, `bool`, `float`, `number`, `path`, `pathLike`, `attrs`,
+`string` / `str`, `int`, `bool`, `float`, `number`, `path`, `pathLike`, `checkedAttrs`,
 `list`, `function`, `derivation`, `null`, `any`, `never`.
 
 ### Polymorphic combinators
@@ -106,9 +106,9 @@ t.tuple [ t.int t.str ]              # positional [int, string]
 t.optionalAttr t.int                 # an int; struct treats the key as omittable
 ```
 
-The checked composites were `listOf`, `attrsOf` and `option`. Those names are gen-merge's option
-types, which fold definitions across modules, so here they are tombstones that refuse by name and
-name the successor.
+The checked composites were `listOf`, `attrsOf` and `option`, and `checkedAttrs` was `attrs`.
+Those names are gen-merge's option types, which fold definitions across modules, so here they are
+tombstones that refuse by name and name the successor.
 
 A combinator's members must be checkers. A member with no `verify` (a gen-merge merge
 strategy such as `submodule`, which carries `admits` instead) is refused by name and

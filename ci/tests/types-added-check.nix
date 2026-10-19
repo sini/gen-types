@@ -108,6 +108,7 @@ in
       "attrs"
       "attrsOf"
       "bool"
+      "checkedAttrs"
       "checkedAttrsOf"
       "checkedListOf"
       "checkedOption"

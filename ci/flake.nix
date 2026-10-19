@@ -36,6 +36,7 @@
             listOf = "gen-types: `listOf` is renamed `checkedListOf`. A checker is a predicate over one value and gen-merge's `listOf` folds definitions across modules, so the two take two names (grammar R10 rule 3); the arguments and the behaviour are unchanged.";
             attrsOf = "gen-types: `attrsOf` is renamed `checkedAttrsOf`. A checker is a predicate over one value and gen-merge's `attrsOf` folds definitions across modules, so the two take two names (grammar R10 rule 3); the arguments and the behaviour are unchanged.";
             option = "gen-types: `option` is renamed `checkedOption`. A checker is a predicate over one value and gen-merge's `option` is an option type, so the two take two names (grammar R10 rule 3); the arguments and the behaviour are unchanged.";
+            attrs = "gen-types: `attrs` is renamed `checkedAttrs`. A checker is a predicate over one value and gen-merge's `attrs` folds definitions across modules, so the two take two names (grammar R10 rule 3); the behaviour is unchanged.";
           };
         }
       ];

@@ -1,7 +1,8 @@
 # The grammar's L1 renames here (den-hoag-7gp66 O4, R10 rule 3): `listOf`/`attrsOf`/`option` are
-# `checkedListOf`/`checkedAttrsOf`/`checkedOption`. The old names refuse catchably (the message is
-# pinned by the generated `root-surface-retired.*` cells), and each successor is the same
-# construction: it accepts and refuses what the old name did, and mints under the same constructor.
+# `checkedListOf`/`checkedAttrsOf`/`checkedOption`, and the nullary `attrs` is `checkedAttrs`
+# (den-hoag-y9vzt). The old names refuse catchably (the message is pinned by the generated
+# `root-surface-retired.*` cells), and each successor is the same construction: it accepts and
+# refuses what the old name did, and mints under the same constructor.
 { genTypes, ... }:
 let
   t = genTypes;
@@ -18,8 +19,10 @@ in
       t.listOf
       t.attrsOf
       t.option
+      t.attrs
     ];
     expected = [
+      true
       true
       true
       true
@@ -31,6 +34,8 @@ in
       listOf = serves (t.checkedListOf t.int) [ 1 ] [ "a" ];
       attrsOf = serves (t.checkedAttrsOf t.int) { a = 1; } { a = "a"; };
       option = serves (t.checkedOption t.int) null "a";
+      attrs = serves t.checkedAttrs { a = 1; } [ 1 ];
+      attrsName = t.checkedAttrs.name;
       ctors = map (ty: (t.payloadOf ty).ctor) [
         (t.checkedListOf t.int)
         (t.checkedAttrsOf t.int)
@@ -50,6 +55,11 @@ in
         true
         false
       ];
+      attrs = [
+        true
+        false
+      ];
+      attrsName = "attrs";
       ctors = [
         "listOf"
         "attrsOf"

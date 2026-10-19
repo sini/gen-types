@@ -50,16 +50,18 @@ in
 checkers
 // {
   # ── THE RETIRED NAMES ──
-  # A checker is a predicate over one value; gen-merge's `listOf`/`attrsOf`/`option` are option
-  # types that fold definitions across modules. Two values of one sort with different meanings take
-  # two names, gen-merge keeps the nixpkgs-parity ones (den-hoag-7gp66 O4), and the checkers are
-  # defined as `checkedListOf`/`checkedAttrsOf`/`checkedOption` in ./checkers.nix.
+  # A checker is a predicate over one value; gen-merge's `listOf`/`attrsOf`/`option`/`attrs` are
+  # option types that fold definitions across modules. Two values of one sort with different meanings
+  # take two names, gen-merge keeps the nixpkgs-parity ones (den-hoag-7gp66 O4; `attrs`,
+  # den-hoag-y9vzt), and the checkers are defined as `checkedListOf`/`checkedAttrsOf`/`checkedOption`/
+  # `checkedAttrs` in ./checkers.nix.
   # Tombstones rather than silent aliases, as gen-schema's `ref`: each is refused by name and the
   # refusal names its replacement. Published values, not lambdas, so reaching a name refuses as well
   # as applying it; no message interpolates anything.
   listOf = throw "gen-types: `listOf` is renamed `checkedListOf`. A checker is a predicate over one value and gen-merge's `listOf` folds definitions across modules, so the two take two names (grammar R10 rule 3); the arguments and the behaviour are unchanged.";
   attrsOf = throw "gen-types: `attrsOf` is renamed `checkedAttrsOf`. A checker is a predicate over one value and gen-merge's `attrsOf` folds definitions across modules, so the two take two names (grammar R10 rule 3); the arguments and the behaviour are unchanged.";
   option = throw "gen-types: `option` is renamed `checkedOption`. A checker is a predicate over one value and gen-merge's `option` is an option type, so the two take two names (grammar R10 rule 3); the arguments and the behaviour are unchanged.";
+  attrs = throw "gen-types: `attrs` is renamed `checkedAttrs`. A checker is a predicate over one value and gen-merge's `attrs` folds definitions across modules, so the two take two names (grammar R10 rule 3); the behaviour is unchanged.";
 
   # refinement contracts
   refined = refinedLib.refined {
