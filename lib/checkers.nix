@@ -900,17 +900,16 @@ let
     # reads it as the type's fold (gen-merge's import boundary, as it reads `mkOptionType`'s). The
     # positional form is refused by name, naming this one.
     typedef =
-      opts:
-      if isString opts then
-        throw "gen-types: typedef: the positional form `typedef \"${opts}\" <predicate>` is retired; the options come first: `typedef { } \"${opts}\" <predicate>`, or `typedef { merge = loc: defs: <value>; } \"${opts}\" <predicate>`"
+      args:
+      if isString args then
+        throw "gen-types: typedef: the positional form `typedef \"${args}\" <predicate>` is retired; the options come first: `typedef { } \"${args}\" <predicate>`, or `typedef { merge = loc: defs: <value>; } \"${args}\" <predicate>`"
       else
-        let
-          hasMerge = opts ? merge;
-        in
         # the options are checked by name first, then bound as FORMALS, which bind the caller's own
         # `merge` slot: one binding declared twice keeps one slot and its seal compares equal
-        # (`componentsPreimage`), where a select (`opts.merge`) is a fresh thunk per construction
-        seq (prelude.checkOptions "gen-types: typedef" [ "merge" ] opts) (
+        # (`componentsPreimage`), where a select (`args.merge`) is a fresh thunk per construction. An
+        # explicit `merge = null` is the absent, inert component; the binders reuse names the library
+        # already interns, since a new identifier is load-time symbol bytes
+        seq (prelude.checkOptions "gen-types: typedef" [ "merge" ] args) (
           {
             merge ? null,
           }:
@@ -920,26 +919,26 @@ let
           in
           seq name (
             seq (predicateDoor "typedef" name "predicate" pred) (
-              seq (if hasMerge then predicateDoor "typedef" name "merge" merge else null) (
+              seq (if merge != null then predicateDoor "typedef" name "merge" merge else null) (
                 let
                   t =
                     mkCompositeSealed "typedef" [ ]
                       (_: {
                         inherit name;
                         pred = algebra.sealedMarker;
-                        merge = if hasMerge then algebra.sealedMarker else null;
+                        merge = if merge != null then algebra.sealedMarker else null;
                       })
-                      ([ (sealedArg [ "pred" ] pred) ] ++ optional hasMerge (sealedArg [ "merge" ] merge))
+                      ([ (sealedArg [ "pred" ] pred) ] ++ optional (merge != null) (sealedArg [ "merge" ] merge))
                       name
                       (v: if pred v then null else typeError name v);
                 in
                 # a stated `merge` rides inside a re-completion, so the stamp covers it as `refined`'s
                 # fields; a typedef stating none pays nothing
-                if hasMerge then completedType (t // { inherit merge; }) else t
+                if merge != null then completedType (t // { inherit merge; }) else t
               )
             )
           )
-        ) opts;
+        ) args;
 
     # ── primitives (builtins.is* wrappers; `function`, `path`, `pathLike`: the nixpkgs predicates) ──
     # These take `prim` rather than the public `typedef`: their predicates are this library's, so
