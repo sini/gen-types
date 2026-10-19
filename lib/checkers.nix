@@ -685,11 +685,8 @@ let
   mkComposite =
     ctor: members: mkArgs:
     mkCompositeSealed ctor members mkArgs [ ];
-  mkCompositeSealed = mkCompositeSealedWith { };
-  # `extra`: fields a constructor states beside the checker's own, inside the completion, so the
-  # stamp (`__typeSelf`) covers them as it covers the rest of the record.
-  mkCompositeSealedWith =
-    extra: ctor: members: mkArgs: sealed: name0: verify:
+  mkCompositeSealed =
+    ctor: members: mkArgs: sealed: name0: verify:
     let
       # a combinator hands a RENDERER (budget -> string), a leaf or a nominal type its name
       name = if isFunction name0 then name0 nameBudget else name0;
@@ -708,7 +705,6 @@ let
         __name = baseName name;
       }
       // mkIdentity ctor members mkArgs sealed name
-      // extra
     );
 
   # ★ A MEMBER ENTERS THE PREIMAGE AS ITS IDENTITY, AND THAT IS WHAT KEEPS TYPE NESTING OFF THE
@@ -925,15 +921,21 @@ let
           seq name (
             seq (predicateDoor "typedef" name "predicate" pred) (
               seq (if hasMerge then predicateDoor "typedef" name "merge" merge else null) (
-                mkCompositeSealedWith (if hasMerge then { inherit merge; } else { }) "typedef" [ ]
-                  (_: {
-                    inherit name;
-                    pred = algebra.sealedMarker;
-                    merge = if hasMerge then algebra.sealedMarker else null;
-                  })
-                  ([ (sealedArg [ "pred" ] pred) ] ++ optional hasMerge (sealedArg [ "merge" ] merge))
-                  name
-                  (v: if pred v then null else typeError name v)
+                let
+                  t =
+                    mkCompositeSealed "typedef" [ ]
+                      (_: {
+                        inherit name;
+                        pred = algebra.sealedMarker;
+                        merge = if hasMerge then algebra.sealedMarker else null;
+                      })
+                      ([ (sealedArg [ "pred" ] pred) ] ++ optional hasMerge (sealedArg [ "merge" ] merge))
+                      name
+                      (v: if pred v then null else typeError name v);
+                in
+                # a stated `merge` rides inside a re-completion, so the stamp covers it as `refined`'s
+                # fields; a typedef stating none pays nothing
+                if hasMerge then completedType (t // { inherit merge; }) else t
               )
             )
           )
