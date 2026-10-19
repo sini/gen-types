@@ -143,6 +143,16 @@ in
       // {
         # introspection parity with the old __schema.refinements surface
         __refinements = refs;
+        # the documentation renders the contracts beside the base, which the name alone does not
+        # (den-hoag-6orb8 G4): `signed integer (must be positive)`
+        description = "${
+          if builtins.isString (base.description or null) then
+            base.description
+          else if builtins.isString (base.name or null) then
+            base.name
+          else
+            "<unnamed>"
+        } (${builtins.concatStringsSep "; " (map (r: r.message) refs)})";
       }
     );
 

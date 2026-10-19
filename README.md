@@ -202,9 +202,16 @@ carries `.override` again, bound to the new set, so overrides chain at any depth
 ### Custom types
 
 ```nix
-t.typedef  "even" (v: builtins.isInt v && v / 2 * 2 == v);   # from a bool predicate
-t.typedef' "even" (v: if ... then null else "must be even"); # from an option<str> verifier
+t.typedef { } "even" (v: builtins.isInt v && v / 2 * 2 == v); # from a bool predicate
+t.typedef' "even" (v: if ... then null else "must be even");  # from an option<str> verifier
+# with its own fold (nixpkgs `mkOptionType`'s `merge`, `loc: defs: value`)
+t.typedef { merge = _loc: defs: builtins.foldl' (a: d: a + d.value) 0 defs; } "tally" builtins.isInt;
 ```
+
+`typedef`'s options come first and are closed (`merge` is the one); the positional
+`typedef "even" pred` is refused by name, naming this form. This library carries `merge` as a
+component of the type's identity and interprets none of it: gen-merge folds with it, verifying each
+definition before the fold and the result after, and a nixpkgs mount reads it from the exported record.
 
 ### Refinement contracts
 

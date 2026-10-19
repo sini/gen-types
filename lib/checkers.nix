@@ -685,8 +685,11 @@ let
   mkComposite =
     ctor: members: mkArgs:
     mkCompositeSealed ctor members mkArgs [ ];
-  mkCompositeSealed =
-    ctor: members: mkArgs: sealed: name0: verify:
+  mkCompositeSealed = mkCompositeSealedWith { };
+  # `extra`: fields a constructor states beside the checker's own, inside the completion, so the
+  # stamp (`__typeSelf`) covers them as it covers the rest of the record.
+  mkCompositeSealedWith =
+    extra: ctor: members: mkArgs: sealed: name0: verify:
     let
       # a combinator hands a RENDERER (budget -> string), a leaf or a nominal type its name
       name = if isFunction name0 then name0 nameBudget else name0;
@@ -705,6 +708,7 @@ let
         __name = baseName name;
       }
       // mkIdentity ctor members mkArgs sealed name
+      // extra
     );
 
   # ★ A MEMBER ENTERS THE PREIMAGE AS ITS IDENTITY, AND THAT IS WHAT KEEPS TYPE NESTING OFF THE
@@ -890,19 +894,50 @@ let
     # Declare a type from a bool predicate; the standard type-mismatch message is
     # synthesized on failure. The caller's predicate, not the synthesized verifier, is the sealed
     # component, so one predicate declared twice is one type.
+    #
+    # ★ OPTIONS FIRST, CLOSED (grammar R5, R7; den-hoag-6orb8 U3): `typedef { merge = m; } "tally" isInt`,
+    # `typedef { } "tally" isInt` with none. `merge` is the foreign protocol's fold, `loc: defs: value`
+    # (nixpkgs `mkOptionType`'s), a lambda or a registered construction returning one, refused by name
+    # otherwise. This library CARRIES it and interprets none of it: it is a component of the type's
+    # identity like the predicate (sealed, or compared where registered; an absent one is the inert
+    # `null`, so a type with a merge never shares a mark with one without), and the merge engine above
+    # reads it as the type's fold (gen-merge's import boundary, as it reads `mkOptionType`'s). The
+    # positional form is refused by name, naming this one.
     typedef =
-      name0: pred:
-      let
-        name = callerName "typedef" name0;
-      in
-      seq name (
-        seq (predicateDoor "typedef" name "predicate" pred) (
-          mkCompositeSealed "typedef" [ ] (_: {
-            inherit name;
-            pred = algebra.sealedMarker;
-          }) [ (sealedArg [ "pred" ] pred) ] name (v: if pred v then null else typeError name v)
-        )
-      );
+      opts:
+      if isString opts then
+        throw "gen-types: typedef: the positional form `typedef \"${opts}\" <predicate>` is retired; the options come first: `typedef { } \"${opts}\" <predicate>`, or `typedef { merge = loc: defs: <value>; } \"${opts}\" <predicate>`"
+      else
+        let
+          hasMerge = opts ? merge;
+        in
+        # the options are checked by name first, then bound as FORMALS, which bind the caller's own
+        # `merge` slot: one binding declared twice keeps one slot and its seal compares equal
+        # (`componentsPreimage`), where a select (`opts.merge`) is a fresh thunk per construction
+        seq (prelude.checkOptions "gen-types: typedef" [ "merge" ] opts) (
+          {
+            merge ? null,
+          }:
+          name0: pred:
+          let
+            name = callerName "typedef" name0;
+          in
+          seq name (
+            seq (predicateDoor "typedef" name "predicate" pred) (
+              seq (if hasMerge then predicateDoor "typedef" name "merge" merge else null) (
+                mkCompositeSealedWith (if hasMerge then { inherit merge; } else { }) "typedef" [ ]
+                  (_: {
+                    inherit name;
+                    pred = algebra.sealedMarker;
+                    merge = if hasMerge then algebra.sealedMarker else null;
+                  })
+                  ([ (sealedArg [ "pred" ] pred) ] ++ optional hasMerge (sealedArg [ "merge" ] merge))
+                  name
+                  (v: if pred v then null else typeError name v)
+              )
+            )
+          )
+        ) opts;
 
     # ── primitives (builtins.is* wrappers; `function`, `path`, `pathLike`: the nixpkgs predicates) ──
     # These take `prim` rather than the public `typedef`: their predicates are this library's, so
@@ -1152,6 +1187,11 @@ let
             }) (optional (verify != null) (sealedArg [ "verify" ] verify)) name verify'
             // {
               override = delta: build ({ inherit total unknown verify; } // delta);
+              # its members by name, as the documentation renders it (den-hoag-6orb8 G4); names, not
+              # descriptions, so a self-referential struct still renders
+              description = "struct '${name}' { ${
+                concatStringsSep "; " (map (a: "${a}: ${memberName "struct '${name}'" members.${a}}") memberNames)
+              } }";
             }
           );
       in

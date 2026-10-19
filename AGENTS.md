@@ -161,7 +161,7 @@ read by other libraries off plain data; `__mint`'s contract is gen-algebra's, wh
 | Reject undeclared record keys                | `(t.struct …).override { unknown = false; }`, or standalone `t.strict [ "a" "b" ]` |
 | Let a record key be absent                   | `t.optionalAttr t.<type>` as the member, or `.override { total = false; }`         |
 | A whole-record invariant                     | `.override { verify = r: …; }`                                                     |
-| A new type from a bool predicate             | `t.typedef "even" pred`                                                            |
+| A new type from a bool predicate             | `t.typedef { } "even" pred`; its own fold: `t.typedef { merge = loc: defs: …; } …` |
 | A new type with a custom message             | `t.typedef' "even" (v: … null \| err)`                                             |
 | Constrain a value's range/domain             | `t.refined t.int t.refinements.positive`                                           |
 | A predicate contract over a kind's instances | `t.mkValidator` + `t.runValidators`, then `t.formatErrors` / `t.defaultOnError`    |

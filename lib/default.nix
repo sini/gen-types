@@ -3,8 +3,9 @@
 # This is the CHECKING half of a pure-Nix module system: it answers "does this value
 # inhabit this type?" and nothing else. A downstream byte-mode MERGE engine (gen-merge)
 # sits ABOVE gen-types and consumes these checkers to verify LEAVES — it owns all
-# definition merging, priority, and fixpoint. gen-types carries NO merge/priority
-# notion whatsoever; the type value is a pure predicate boundary.
+# definition merging, priority, and fixpoint. gen-types INTERPRETS no merge/priority
+# notion: a `typedef`'s `merge` is carried as a component of its identity and read only by the
+# engine above; the type value is a pure predicate boundary.
 #
 # The handoff contract is the checker record itself — { name; verify; check; __name;
 # __nameWithin; __mint; __payload; __sealed } — so gen-merge calls `t.verify` on a merged leaf value (null = ok,

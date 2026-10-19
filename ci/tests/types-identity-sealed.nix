@@ -39,7 +39,7 @@ let
   };
   even = v: builtins.isInt v && builtins.bitAnd v 1 == 0;
   even' = v: builtins.isInt v && builtins.bitAnd v 1 == 0;
-  td = t.typedef "stitched";
+  td = t.typedef { } "stitched";
   rf =
     c:
     t.refined t.int {
@@ -84,14 +84,14 @@ in
     expr = {
       oneBinding =
         let
-          x = t.typedef "even" even;
+          x = t.typedef { } "even" even;
         in
         t.typeEq x x;
-      sharedPredicate = t.typeEq (t.typedef "even" even) (t.typedef "even" even);
-      twoLambdas = refused (t.typeEq (t.typedef "even" even) (t.typedef "even" even'));
-      otherName = t.typeEq (t.typedef "even" even) (t.typedef "odd" even);
+      sharedPredicate = t.typeEq (t.typedef { } "even" even) (t.typedef { } "even" even);
+      twoLambdas = refused (t.typeEq (t.typedef { } "even" even) (t.typedef { } "even" even'));
+      otherName = t.typeEq (t.typedef { } "even" even) (t.typedef { } "odd" even);
       # `typedef` and `typedef'` over one function are two constructors
-      predicateVsVerifier = t.typeEq (t.typedef "even" even) (t.typedef' "even" even);
+      predicateVsVerifier = t.typeEq (t.typedef { } "even" even) (t.typedef' "even" even);
     };
     expected = {
       oneBinding = true;
@@ -180,10 +180,10 @@ in
   # catchably when the type is built (the message is pinned in `../tests-error.nix`).
   flake.tests.types-identity-sealed.test-predicate-door-refuses-other-forms = {
     expr = {
-      integer = unbuilt (t.typedef "tally" 3);
-      record = unbuilt (t.typedef "tally" { lo = 1; });
+      integer = unbuilt (t.typedef { } "tally" 3);
+      record = unbuilt (t.typedef { } "tally" { lo = 1; });
       verifierInteger = unbuilt (t.typedef' "tally" 3);
-      controlFunctor = (t.typedef "tally" { __functor = _: v: builtins.isInt v; }).verify 1;
+      controlFunctor = (t.typedef { } "tally" { __functor = _: v: builtins.isInt v; }).verify 1;
     };
     expected = {
       integer = true;

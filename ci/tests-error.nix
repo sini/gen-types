@@ -172,14 +172,14 @@ in
   # the predicate door names itself, the type and the accepted forms, catchably, where a record or an
   # integer used to abort uncatchably at the first `verify` (den-hoag-6orb8 U1-wf)
   flake.testsError.types-identity-sealed.test-predicate-door-names-the-accepted-forms = {
-    expr = t.typedef "tally" 3;
+    expr = t.typedef { } "tally" 3;
     expectedError = {
       type = "ThrownError";
       msg = "gen-types: typedef: the predicate of type 'tally' must be a function or a registered construction \\(gen-algebra `mkIntensional`\\), but it is of type 'int'";
     };
   };
   flake.testsError.types-identity-sealed.test-predicate-door-refuses-a-record = {
-    expr = (t.typedef "tally" { lo = 1; }).verify 1;
+    expr = (t.typedef { } "tally" { lo = 1; }).verify 1;
     expectedError = {
       type = "ThrownError";
       msg = "gen-types: typedef: the predicate of type 'tally' must be a function or a registered construction \\(gen-algebra `mkIntensional`\\), but it is of type 'set'";
@@ -197,6 +197,32 @@ in
     expectedError = {
       type = "ThrownError";
       msg = "gen-types: idOf: type 'listOf<int>' has sealed component\\(s\\) 'members.0' \\(a caller-supplied lambda, a registered construction, or a type with no minted identity\\), which its mark is blind to: it is decided by `typeEq` and has no identity to demand";
+    };
+  };
+
+  # `typedef`'s options come first and are closed (den-hoag-6orb8 U3-m3, U3-m5, totality): the
+  # positional form names the options-first one, an unknown option names the door and `merge`, and a
+  # `merge` that is no function is refused where the type is built
+  flake.testsError.types-typedef-merge.test-the-positional-form-names-the-options-first-form = {
+    expr = t.typedef "tally" builtins.isInt;
+    expectedError = {
+      type = "ThrownError";
+      msg = "^gen-types: typedef: the positional form `typedef \"tally\" <predicate>` is retired; the options come first: `typedef \\{ \\} \"tally\" <predicate>`, or `typedef \\{ merge = loc: defs: <value>; \\} \"tally\" <predicate>`$";
+    };
+  };
+  flake.testsError.types-typedef-merge.test-an-unknown-option-names-typedef-and-merge = {
+    expr = t.typedef { mrege = _: _: 0; } "tally" builtins.isInt;
+    expectedError = {
+      type = "ThrownError";
+      msg =
+        "^" + prelude.escapeRegex (refusals.unknownOption "gen-types: typedef" [ "merge" ] "mrege") + "$";
+    };
+  };
+  flake.testsError.types-typedef-merge.test-a-merge-that-is-no-function-is-refused = {
+    expr = t.typedef { merge = 3; } "tally" builtins.isInt;
+    expectedError = {
+      type = "ThrownError";
+      msg = "gen-types: typedef: the merge of type 'tally' must be a function or a registered construction \\(gen-algebra `mkIntensional`\\), but it is of type 'int'";
     };
   };
 
@@ -411,7 +437,7 @@ in
     # `sealedArg`: a constructor's own caller predicate, sealed in the slot it was passed in, through
     # each caller (`typedef`, `typedef'`, `struct`'s `verify`)
     test-a-typedef-predicate-by-selection-answers-as-the-evaluator-s-own-identity = {
-      expr = teq (t.typedef "even" sl.even) (t.typedef "even" sl.even) == asRefusal twoSlots;
+      expr = teq (t.typedef { } "even" sl.even) (t.typedef { } "even" sl.even) == asRefusal twoSlots;
       expected = true;
     };
     test-a-typedef-prime-verifier-by-selection-answers-as-the-evaluator-s-own-identity = {
@@ -424,7 +450,7 @@ in
     };
     test-a-bound-caller-predicate-is-one-type = {
       expr = {
-        typedef = teq (t.typedef "even" even) (t.typedef "even" even);
+        typedef = teq (t.typedef { } "even" even) (t.typedef { } "even" even);
         typedefPrime = teq (t.typedef' "v" verifyPos) (t.typedef' "v" verifyPos);
         structVerify = teq (structVerify verifyPos) (structVerify verifyPos);
       };

@@ -238,7 +238,7 @@ in
       struct = regimeOf (t.struct "cfg" { a = t.int; });
       structWithCallerVerify = regimeOf ((t.struct "cfg" { a = t.int; }).override { verify = _: null; });
       refined = regimeOf (t.refined t.int r.positive);
-      callerTypedef = regimeOf (t.typedef "port" (v: v > 0));
+      callerTypedef = regimeOf (t.typedef { } "port" (v: v > 0));
     };
     expected = {
       prim = "minted";
@@ -260,7 +260,7 @@ in
     expr = {
       refined = evaluates (t.idOf (t.refined t.int r.positive));
       structWithCallerVerify = evaluates (t.idOf ((t.struct "s" { }).override { verify = _: null; }));
-      callerTypedef = evaluates (t.idOf (t.typedef "port" (v: v > 0)));
+      callerTypedef = evaluates (t.idOf (t.typedef { } "port" (v: v > 0)));
       # CONTROL, same run: the same demand on a minted checker returns a kind-tagged
       # identity cleanly, so these refusals are the sealed regime and not a broken mint.
       mintedStillAnswers =
@@ -341,7 +341,7 @@ in
   # shipped constructor builds (den-hoag-6orb8 A1; pre-release, no tombstone).
   flake.tests.types-identity.test-unmintable-id-still-refuses-by-name = {
     expr = {
-      carriesNoAccessor = !((t.typedef "port" (v: v > 0)) ? __id);
+      carriesNoAccessor = !((t.typedef { } "port" (v: v > 0)) ? __id);
       demandingItRefuses = !(evaluates (t.idOf unmintableChecker));
       # CONTROL: the same demand on a minted checker returns the identity cleanly.
       mintedDemandSucceeds = t.idOf (mkMinted "a" "type:dddd");
@@ -466,8 +466,8 @@ in
       shapes = {
         int = t.int;
         listOfInt = t.checkedListOf t.int;
-        typedef = t.typedef "port" (v: v > 0);
-        listOfTypedef = t.checkedListOf (t.typedef "port" (v: v > 0));
+        typedef = t.typedef { } "port" (v: v > 0);
+        listOfTypedef = t.checkedListOf (t.typedef { } "port" (v: v > 0));
         refined = t.refined t.int r.positive;
         structOverride = (t.struct "s" { }).override { verify = _: null; };
         enum = t.enum "e" [ "a" ];
