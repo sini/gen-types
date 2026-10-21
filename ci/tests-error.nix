@@ -16,6 +16,7 @@
   genTypes,
   prelude,
   algebra,
+  identity,
   lib,
   ...
 }:
@@ -548,4 +549,86 @@ in
       expected = true;
     };
   };
+
+  # ★ A DEPARTED CONSTRUCTION ON EVERY TYPE ROUTE (den-hoag-28dnv). A registered construction carried as a
+  # `typedef` predicate, a `refined` check or a member, then copied by `//`, is refused BY NAME at an equal
+  # subject, the copy against itself and two self-including extensions included, and is never compared as
+  # its reified record (whose `==` walks the back-edge until the evaluator aborts). A copy against another
+  # term decides `false`. Live control: two constructions of one term are one type.
+  flake.testsError.types-departed-construction =
+    let
+      mk = algebra.mkIntensional identity.hashIdentity {
+        revision = 1;
+        members.mk = _: _: true;
+      } "mk";
+      d1 = mk 1;
+      x = d1 // {
+        note = "x";
+      };
+      selfIncluding =
+        _:
+        let
+          s = d1 // {
+            includes = [ s ];
+          };
+        in
+        s;
+      td = t.typedef { } "t";
+      rf =
+        v:
+        t.refined t.int [
+          {
+            check = v;
+            message = "m";
+          }
+        ];
+      ctl = teq (td d1) (td (mk 1)) == true;
+    in
+    {
+      test-a-typedef-over-a-departed-construction-against-itself-is-refused = {
+        expr =
+          assert ctl;
+          teq (td x) (td x);
+        expected = "REFUSED";
+      };
+      test-two-typedefs-over-self-including-extensions-are-refused = {
+        expr =
+          assert ctl;
+          teq (td (selfIncluding 1)) (td (selfIncluding 2));
+        expected = "REFUSED";
+      };
+      test-two-refined-over-self-including-extensions-are-refused = {
+        expr =
+          assert ctl;
+          teq (rf (selfIncluding 1)) (rf (selfIncluding 2));
+        expected = "REFUSED";
+      };
+      test-two-members-that-are-self-including-extensions-are-refused = {
+        expr =
+          assert ctl;
+          teq (t.checkedListOf (selfIncluding 1)) (t.checkedListOf (selfIncluding 2));
+        expected = "REFUSED";
+      };
+      test-a-typedef-over-a-departed-construction-against-another-term-is-false = {
+        expr =
+          assert ctl;
+          teq (td x) (td (mk 2));
+        expected = false;
+      };
+      # one level down: a container over a typedef propagates the typedef's sealed map
+      test-lists-of-typedefs-over-two-departed-extensions-are-refused = {
+        expr =
+          assert ctl;
+          teq (t.checkedListOf (td (d1 // { includes = [ "A" ]; }))) (
+            t.checkedListOf (td (d1 // { includes = [ "B" ]; }))
+          );
+        expected = "REFUSED";
+      };
+      test-a-list-of-a-typedef-over-a-departed-construction-against-another-term-is-false = {
+        expr =
+          assert ctl;
+          teq (t.checkedListOf (td x)) (t.checkedListOf (td (mk 2)));
+        expected = false;
+      };
+    };
 }

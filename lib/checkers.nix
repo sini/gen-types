@@ -397,13 +397,16 @@ let
   # Closing either needs an evaluator-observable value identity — a visited set — which pure Nix
   # does not expose. Same-instance comparisons take the slot shortcut and are unaffected.
   #
-  # ★ A DECLARED SUBJECT IS THE SUBJECT: a registered construction (gen-algebra `mkIntensional`)
-  # names its comparison subject, its registry coordinate, constructor and inert arguments, and that
-  # is answered instead of the record, whose `fn` is a lambda rebuilt per construction.
+  # ★ A DECLARED SUBJECT IS THE SUBJECT WHILE ITS PRODUCER'S COMPLETION HOLDS: a registered construction
+  # (gen-algebra `mkIntensional`) names its comparison subject, its registry coordinate, constructor and
+  # inert arguments, and that is answered instead of the record, whose `__functor` closes over a builder
+  # application rebuilt per construction; a `//` copy of it hands the subject on marked as departed.
   memberSubject =
     v:
-    if algebra.hasDeclaredSubject v then
-      v.__mint.unmintable.subject
+    if algebra.declaresSubject v then
+      # a departed construction hands its subject on marked, and `sealedCollisionEq` refuses it at an
+      # equal one: never its reified record, whose `==` can walk a back-edge uncatchably
+      algebra.subjectEntry v v.__mint.unmintable.subject
     else
       let
         s = removeAttrs v [ "__okAt" ];

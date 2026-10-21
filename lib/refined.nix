@@ -103,7 +103,7 @@ in
       verifiersOf,
       renderNode,
       sealedMarker,
-      hasDeclaredSubject,
+      declaresSubject,
       completedType,
     }:
     base: refinements:
@@ -137,7 +137,7 @@ in
               {
                 inherit path;
                 # a slice keeps the check's slot, where a selection would be a fresh thunk
-                value = if hasDeclaredSubject r.check then r.check else builtins.intersectAttrs { check = null; } r;
+                value = if declaresSubject r.check then r.check else builtins.intersectAttrs { check = null; } r;
               }
             ]
           ) (length refs)
