@@ -71,7 +71,7 @@ checkers
       verifiersOf
       renderNode
       ;
-    inherit (algebra) sealedMarker hasDeclaredSubject;
+    inherit (algebra) sealedMarker declaresSubject;
     inherit completedType;
   };
   inherit (refinedLib) refinements;
