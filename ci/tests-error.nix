@@ -285,6 +285,30 @@ in
         msg = "^gen-types: refined: refinement ${fault}\\. A refinement is a record `\\{ check = <value -> bool>; message = \"<what a violation reports>\"; \\}`; ";
       };
       rt = r: t.refined t.int r;
+      withCheck = check: {
+        inherit check;
+        message = "positive";
+      };
+      chain = n: leaf: if n == 0 then leaf else { __functor = _: chain (n - 1) leaf; };
+      bound = "a functor that reaches no function within 32 `__functor` steps";
+      # what Nix applies as `leaf`: nested, a functor-valued `__functor`, 32 steps, stacked
+      # `setFunctionArgs` (nixpkgs' encoding, written out)
+      applicable = leaf: [
+        { __functor = _: { __functor = _: leaf; }; }
+        {
+          __functor = {
+            __functor = _: _: leaf;
+          };
+        }
+        (chain 32 leaf)
+        {
+          __functor = _: {
+            __functor = _: leaf;
+            __functionArgs = { };
+          };
+          __functionArgs = { };
+        }
+      ];
       ok = {
         check = pos;
         message = "positive";
@@ -345,6 +369,60 @@ in
           ]).verify
             70000;
         expected = "must be a valid TCP port (1-65535)";
+      };
+      # den-hoag-b6nyh: `check` is admitted by what Nix can apply (gen-prelude `isApplicable`); a
+      # functor Nix cannot apply is refused where `refined` takes it, where `verify` and the
+      # two-argument `check` aborted on it before. What Nix applies is served as its lambda.
+      test-a-functor-check-returning-a-non-function-is-refused = {
+        expr =
+          (rt (withCheck {
+            __functor = _: 5;
+          })).verify
+            1;
+        expectedError = refuses "0 has a `check` of type `set`, not a function";
+      };
+      test-a-functor-check-returning-a-non-function-is-catchable = {
+        expr =
+          (builtins.tryEval (
+            (rt (withCheck {
+              __functor = _: 5;
+            })).check
+              1
+              1
+          )).success;
+        expected = false;
+      };
+      test-a-self-returning-functor-check-is-refused-naming-the-bound = {
+        expr =
+          (rt (
+            withCheck (
+              let
+                s = {
+                  __functor = self: self;
+                };
+              in
+              s
+            )
+          )).check
+            1
+            1;
+        expectedError = refuses "0 has a `check` of type `set` \\(${bound}\\), not a function";
+      };
+      test-a-33-level-functor-check-is-refused-naming-the-bound = {
+        expr = (rt (withCheck (chain 33 pos))).verify 1;
+        expectedError = refuses "0 has a `check` of type `set` \\(${bound}\\), not a function";
+      };
+      test-applicable-functor-checks-are-served-as-their-lambda = {
+        expr = map (c: [
+          ((rt (withCheck c)).verify 1)
+          ((rt (withCheck c)).verify (-1))
+          ((rt (withCheck c)).check 1 1)
+        ]) (applicable pos);
+        expected = builtins.genList (_: [
+          null
+          "positive"
+          1
+        ]) 4;
       };
       test-control-a-functor-check-is-taken = {
         expr =
