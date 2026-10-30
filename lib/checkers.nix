@@ -76,6 +76,9 @@ let
     ;
   isNull = v: v == null;
   isDerivation = v: isAttrs v && (v.type or null) == "derivation";
+  # One partial application for every construction, so the constant tags gen-algebra mints in it
+  # are minted once per evaluation, not once per type (den-hoag-a7c9r).
+  preimageOf = algebra.componentsPreimage identity.hashIdentity;
 
   # ── error rendering (only ever forced on the failure path) ──
 
@@ -487,7 +490,7 @@ let
       tags = if isList members then map tagOf members else mapAttrs (_: tagOf) members;
       args = mkArgs tags;
       guard = identityGuard memberList;
-      pre = algebra.componentsPreimage identity.hashIdentity (
+      pre = preimageOf (
         map (
           m:
           if isSealedMember m.t then
