@@ -81,7 +81,7 @@ read by other libraries off plain data; `__mint`'s contract is gen-algebra's, wh
 | `path`                 | nixpkgs' `types.path`: `lib.isStringLike` (gen-prelude's), and absolute (a derivation counts as absolute)    |
 | `pathLike`             | nixpkgs' `types.pathWith { }`: `lib.isStringLike` (gen-prelude's): string, path, or a set `toString` coerces |
 | `checkedAttrs`, `list` | `isAttrs` / `isList`                                                                                         |
-| `function`             | nixpkgs' `lib.isFunction` (gen-prelude's): a lambda, or a functor whose `__functor` returns a function       |
+| `function`             | what Nix can apply (gen-prelude's `isApplicable`): a lambda, or a functor reaching one within 32 steps       |
 | `derivation`           | attrset with `type == "derivation"`                                                                          |
 | `null`                 | `v == null`                                                                                                  |
 | `any`                  | everything                                                                                                   |

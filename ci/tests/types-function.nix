@@ -1,8 +1,9 @@
 # gen-types: `function` admits exactly what nixpkgs' `lib.isFunction` admits (den-hoag-b5qdr). A
-# functor whose `__functor` returns a function is a function: nixpkgs' `setFunctionArgs` wrapper,
-# gen-prelude's own `door` and gen-types' own `witnessedCheck` `.check` are all that shape. A functor whose `__functor` is not a function, or
-# returns a non-function, is refused, as an attrset is. RED under `builtins.isFunction`: every
-# functor row refuses.
+# functor whose `__functor` reaches a function is a function: nixpkgs' `setFunctionArgs` wrapper,
+# gen-prelude's own `door` and gen-types' own `witnessedCheck` `.check` are all that shape, and so
+# are a nested functor and a `setFunctionArgs` over one (nixpkgs #574597, den-hoag-b6nyh). A functor
+# whose `__functor` is not a function, or returns a non-function, is refused, as an attrset is. RED
+# under `builtins.isFunction`: every functor row refuses.
 {
   genTypes,
   prelude,
@@ -40,6 +41,14 @@ let
     null = null;
   };
   admits = v: t.function.verify v == null;
+  chain = n: if n == 0 then id else { __functor = _: chain (n - 1); };
+  self = {
+    __functor = s: s;
+  };
+  fnOrAttrs = t.union [
+    t.function
+    t.checkedAttrs
+  ];
 in
 {
   flake.tests.types-function.test-functor-ok = {
@@ -69,16 +78,45 @@ in
     );
     expected = [ ];
   };
-  # control: the battery straddles the predicate, so the differential cannot pass on a collapsed one
+  # control: the battery straddles the predicate, so the differential cannot pass on a collapsed one.
+  # It pins nixpkgs' own predicate, so nixpkgs' move moves it: #574597 (`85effade`, nixpkgs-lib
+  # `7851ba6`) answers the two nested rows true again, as before #520296.
   flake.tests.types-function.test-control-battery-straddles = {
     expr = builtins.filter (n: lib.isFunction battery.${n}) (builtins.attrNames battery);
     expected = [
       "door"
       "functor"
       "lambda"
+      "nestedFunctor"
       "setFunctionArgs"
       "setFunctionArgsFormals"
+      "setFunctionArgsOverFunctor"
       "witnessedCheck"
+    ];
+  };
+  # `function` is the bool form under a union: a functor whose walk exhausts gen-prelude's bound is
+  # refused by `function` alone and served by the `checkedAttrs` member, as at b5qdr
+  flake.tests.types-function.test-union-serves-an-exhausted-functor-by-its-other-member = {
+    expr = map (v: fnOrAttrs.verify v) [
+      self
+      (chain 33)
+    ];
+    expected = [
+      null
+      null
+    ];
+  };
+  # control, same cells: `function` alone refuses both, and serves the 32-level chain
+  flake.tests.types-function.test-control-function-alone-refuses-an-exhausted-functor = {
+    expr = map (v: t.function.verify v == null) [
+      self
+      (chain 33)
+      (chain 32)
+    ];
+    expected = [
+      false
+      false
+      true
     ];
   };
 }

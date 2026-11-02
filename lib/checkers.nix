@@ -958,9 +958,24 @@ let
     pathLike = prim "pathLike" prelude.isStringLike;
     checkedAttrs = prim "attrs" isAttrs;
     list = prim "list" isList;
-    # nixpkgs' `lib.isFunction`, read by name from gen-prelude: a functor whose `__functor` returns a
-    # function is a function, as `setFunctionArgs`, `witnessedCheck` and `prelude.door` build.
-    function = prim "function" prelude.isFunction;
+    # What Nix can apply, read by name from gen-prelude (`isApplicable`, den-hoag-b6nyh): a functor
+    # whose `__functor` reaches a function is a function, as `setFunctionArgs`, `witnessedCheck` and
+    # `prelude.door` build, and so is a nested one. The bool form, because `union` and gen-merge's
+    # `either` / `oneOf` offer `function` beside an alternative that may serve the value. A functor
+    # whose walk exhausts the bound is named by the bound, not as a set (Nix may still apply it).
+    function = prim' "function" (
+      v:
+      if prelude.isApplicable v then
+        null
+      else
+        let
+          k = prelude.applicableKindOf v;
+        in
+        if k == "a ${typeOf v}" then
+          typeError "function" v
+        else
+          "expected type 'function' but value ${toPretty v} is ${k}"
+    );
     derivation = prim "derivation" isDerivation;
     null = prim "null" isNull;
     any = prim' "any" (_: null);

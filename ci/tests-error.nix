@@ -259,6 +259,20 @@ in
     };
   };
 
+  # a functor whose walk exhausts gen-prelude's bound is refused by `function` naming the bound, not
+  # as a set: Nix applies a 33-level chain (den-hoag-b6nyh)
+  flake.testsError.types-function.test-an-exhausted-functor-is-refused-naming-the-bound = {
+    expr =
+      let
+        chain = n: if n == 0 then (x: x) else { __functor = _: chain (n - 1); };
+      in
+      t.function.check (chain 33) 1;
+    expectedError = {
+      type = "ThrownError";
+      msg = "^expected type 'function' but value \\{ __functor = …; \\} is a functor that reaches no function within 32 `__functor` steps$";
+    };
+  };
+
   # a set whose `__toString` throws propagates its own error through `path`, which coerces it to
   # test absoluteness, so a union with a `path` member throws rather than serving the `attrs`
   # member, as nixpkgs' `either path attrs` does (den-hoag-fyx6m)
