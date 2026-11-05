@@ -163,7 +163,10 @@ checkers
         t.__mint.minted
       else
         throw "gen-types: idOf: type '${who}' has sealed component(s) ${
-          builtins.concatStringsSep ", " (map (k: "'${k}'") (builtins.attrNames t.__sealed))
+          # `__departed` is the map's departure record (gen-algebra `componentsPreimage`), not a component
+          builtins.concatStringsSep ", " (
+            map (k: "'${k}'") (builtins.attrNames (removeAttrs t.__sealed [ "__departed" ]))
+          )
         } (a caller-supplied lambda, a registered construction, or a type with no minted identity), which its mark is blind to: it is decided by `typeEq` and has no identity to demand"
     else
       throw "gen-types: idOf: type '${who}' has no identity to demand: ${
