@@ -644,5 +644,16 @@ in
           teq (t.checkedListOf (td x)) (t.checkedListOf (td (mk 2)));
         expected = false;
       };
+      # G6: `idOf`'s refusal names the components, not the map's departure record `__departed`
+      test-idOf-over-a-departed-construction-names-its-components-not-the-departure-record = {
+        expr = t.idOf (td (d1 // { includes = [ "A" ]; }));
+        expectedError = {
+          type = "ThrownError";
+          msg =
+            "^"
+            + prelude.escapeRegex "gen-types: idOf: type 't' has sealed component(s) 'pred' (a caller-supplied lambda, a registered construction, or a type with no minted identity), which its mark is blind to: it is decided by `typeEq` and has no identity to demand"
+            + "$";
+        };
+      };
     };
 }
