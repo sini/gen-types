@@ -757,6 +757,22 @@ let
   # over it is the one record whose `check` no longer holds the witness. Total over records whose
   # `check` reaches WHNF: a record with no witness (this library's own checkers) answers `false`.
   rewritesCheck = t: t ? _checkWitness && t ? check && t.check != t._checkWitness;
+  # The predicate CLASS a constructor states for its published `check`: `__checkMark`, a string beside the
+  # functor in the check record, and in the witness the producer published with it. `checkMarksAgree` holds where
+  # both records state one and the two are one value, so it compares data and no function. It answers WHICH
+  # REPRESENTATION a producer may give a record whose check another construction of the same class supplied; it
+  # never answers whether the check runs, which is `rewritesCheck`'s: a `//` keeps the mark beside a functor it
+  # replaces, so an agreeing pair can still be a rewrite, and a reader that skipped the check on agreement would drop
+  # it (den-hoag-onuzv).
+  checkMarksAgree =
+    t:
+    t ? check
+    && t ? _checkWitness
+    && isAttrs t.check
+    && isAttrs t._checkWitness
+    && t.check ? __checkMark
+    && t._checkWitness ? __checkMark
+    && t.check.__checkMark == t._checkWitness.__checkMark;
   # The same question asked of the MARK: whether a field the record's mark was minted over no longer holds its
   # witness, read through the producer's declared witness (`__witness.checks`, the declaration gen-algebra's
   # `conservativeEq` reads), and through this library's own pair where none is declared. It answers as
@@ -1238,6 +1254,7 @@ in
     identityGuard
     verifiersOf
     rewritesCheck
+    checkMarksAgree
     rewritesMark
     witnessedCheck
     witnessRecord

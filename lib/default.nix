@@ -36,6 +36,7 @@ let
     identityGuard
     verifiersOf
     rewritesCheck
+    checkMarksAgree
     witnessedCheck
     witnessRecord
     renderNode
@@ -250,5 +251,10 @@ checkers
   inherit identityGuard;
 
   # ── the check-witness protocol (den-hoag-ydro3, OQ-A arm ii) ──
-  inherit rewritesCheck witnessedCheck witnessRecord;
+  inherit
+    rewritesCheck
+    checkMarksAgree
+    witnessedCheck
+    witnessRecord
+    ;
 }

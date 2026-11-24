@@ -108,6 +108,7 @@ in
       "attrs"
       "attrsOf"
       "bool"
+      "checkMarksAgree"
       "checkedAttrs"
       "checkedAttrsOf"
       "checkedListOf"
@@ -155,6 +156,52 @@ in
       "witnessedCheck"
     ];
   };
+
+  # `checkMarksAgree`: the predicate class two marks state, compared as data. It agrees for the producer's own
+  # pair and for a check another construction of the same class supplied, and it still agrees where a `//`
+  # replaced the functor beside the mark, so `rewritesCheck` answers there: the two readers never say "own"
+  # together on a rewrite. RED if agreement is read off anything but both marks.
+  flake.tests.types-added-check.test-check-marks-agree =
+    let
+      marked = m: f: t.witnessRecord f // { __checkMark = m; };
+      a = marked "k" (x: x > 0);
+      b = marked "k" (x: x > 0);
+      pair = c: w: {
+        check = c;
+        _checkWitness = w;
+      };
+      functorOverride = a // {
+        __functor = _: x: a x && x < 3;
+      };
+    in
+    {
+      expr = {
+        own = t.checkMarksAgree (pair a a);
+        moved = t.checkMarksAgree (pair b a);
+        functorOverride = t.checkMarksAgree (pair functorOverride a);
+        functorOverrideRewrites = t.rewritesCheck (pair functorOverride a);
+        functorOverrideApplies = functorOverride 5;
+        otherMark = t.checkMarksAgree (pair (marked "j" (x: x > 0)) a);
+        checkUnmarked = t.checkMarksAgree (pair (t.witnessRecord (x: x > 0)) a);
+        witnessUnmarked = t.checkMarksAgree (pair a (t.witnessRecord (x: x > 0)));
+        lambdaCheck = t.checkMarksAgree (pair (x: x > 0) a);
+        noWitness = t.checkMarksAgree { check = a; };
+        bare = t.checkMarksAgree { };
+      };
+      expected = {
+        own = true;
+        moved = true;
+        functorOverride = true;
+        functorOverrideRewrites = true;
+        functorOverrideApplies = false;
+        otherMark = false;
+        checkUnmarked = false;
+        witnessUnmarked = false;
+        lambdaCheck = false;
+        noWitness = false;
+        bare = false;
+      };
+    };
 
   # `witnessRecord`: the one record `witnessedCheck` publishes twice. A caller publishing it under
   # both fields itself builds `witnessedCheck`'s layout, and the test reads that pair as it reads
